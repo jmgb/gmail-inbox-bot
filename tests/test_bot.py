@@ -41,7 +41,7 @@ def mailbox_config():
         "name": "TestMailbox",
         "email": "bot@example.com",
         "refresh_token_env": "GOOGLE_REFRESH_TOKEN_TEST",
-        "classifier": {"prompt_file": "gmail_inbox_bot/prompts/proveedores_sostenibles.txt"},
+        "classifier": {"prompt_file": "gmail_inbox_bot/prompts/clasificador_inbox.txt"},
         "routing": {"spam": {"action": "silent"}},
         "templates": {},
         "max_emails_per_poll": 50,

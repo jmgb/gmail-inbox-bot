@@ -8,7 +8,7 @@ MOCK_CONFIG = {
     "name": "TestMailbox",
     "email": "test@example.com",
     "classifier": {
-        "prompt_file": "gmail_inbox_bot/prompts/proveedores_sostenibles.txt",
+        "prompt_file": "gmail_inbox_bot/prompts/clasificador_inbox.txt",
     },
     "max_emails_per_poll": 50,
     "poll_interval_seconds": 120,
