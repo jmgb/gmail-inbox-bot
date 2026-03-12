@@ -36,7 +36,8 @@ routing:
 
   newsletters:
     action: move
-    folder: Suscripciones
+    folder: Newsletters
+    is_read: false
 
   notificaciones:
     action: move
