@@ -12,6 +12,7 @@ build/
 # Environment variables
 .env
 *.credentials.json
+client_secret_*.json
 token.json
 
 # Testing / Linting
