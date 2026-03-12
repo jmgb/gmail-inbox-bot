@@ -12,7 +12,9 @@ from gmail_inbox_bot.actions import (
     TAG_PENDING_ATTACH,
     TAG_PENDING_MANAGE,
     TAG_REPLIED,
+    _load_signature,
     _plain_to_html,
+    _signature_cache,
     already_processed,
     execute,
 )
@@ -93,13 +95,10 @@ class TestExecuteForward:
         result = execute(graph, config, email_msg, classification)
 
         assert "jesus82c@gmail.com" in result
-        graph.forward_email.assert_called_once_with(
-            "test@example.com",
-            email_msg["id"],
-            "EN Dest",
-            "jesus82c@gmail.com",
-            body_prefix="",
-        )
+        graph.forward_email.assert_called_once()
+        call_kwargs = graph.forward_email.call_args
+        assert call_kwargs[1]["body_suffix"] is not None
+        assert "aiship.co" in call_kwargs[1]["body_suffix"]
         graph.update_email.assert_called_once_with(
             "test@example.com",
             email_msg["id"],
@@ -796,3 +795,41 @@ class TestForwardedEmailReply:
         call_kwargs = graph.reply_to_email.call_args
         assert call_kwargs[1]["override_to"] is None
         assert call_kwargs[1]["force_draft"] is False
+
+
+# ---------- Signature / footer ----------
+
+
+class TestSignature:
+    """Verify the aiship.co marketing footer appears in all outgoing emails."""
+
+    def test_default_signature_contains_aiship(self):
+        """Default signature file resolves and contains aiship.co branding."""
+        _signature_cache.clear()
+        sig = _load_signature({})
+        assert "aiship.co" in sig
+
+    def test_signature_disabled_with_empty_string(self):
+        _signature_cache.clear()
+        sig = _load_signature({"signature_file": ""})
+        assert sig == ""
+
+    def test_signature_cached_after_first_load(self):
+        _signature_cache.clear()
+        sig1 = _load_signature({})
+        sig2 = _load_signature({})
+        assert sig1 is sig2  # same object from cache
+
+    def test_reply_body_contains_signature(self, graph, config, email_msg):
+        _signature_cache.clear()
+        classification = {"categoria": "coste_programa", "idioma": "español"}
+        execute(graph, config, email_msg, classification)
+        html_body = graph.reply_to_email.call_args[0][2]
+        assert "aiship.co" in html_body
+
+    def test_forward_body_suffix_contains_signature(self, graph, config, email_msg):
+        _signature_cache.clear()
+        classification = {"categoria": "reenvio_ingles", "idioma": "inglés"}
+        execute(graph, config, email_msg, classification)
+        suffix = graph.forward_email.call_args[1]["body_suffix"]
+        assert "aiship.co" in suffix

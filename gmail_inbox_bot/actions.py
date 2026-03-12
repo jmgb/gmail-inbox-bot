@@ -5,9 +5,8 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .logger import setup_logger
-
 from .classifier import DEFAULT_MODEL, generate_response, load_prompt
+from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.actions", "logs/app.log")
 
@@ -90,17 +89,27 @@ def _plain_to_html(text: str) -> str:
     return escaped.replace("\n", "<br>\n")
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_SIGNATURE_FILE = str(_PROJECT_ROOT / "templates" / "signature.html")
+
+# Cache: path -> html content
+_signature_cache: dict[str, str] = {}
+
+
 def _load_signature(config: dict) -> str:
-    sig_file = config.get("signature_file")
+    sig_file = config.get("signature_file", DEFAULT_SIGNATURE_FILE)
     if not sig_file:
         return ""
+    if sig_file in _signature_cache:
+        return _signature_cache[sig_file]
     try:
         sig_html = Path(sig_file).read_text(encoding="utf-8")
-        # Separar visualmente el cuerpo del mensaje de la firma
-        return "<br><br>" + sig_html
+        result = "<br><br>" + sig_html
     except FileNotFoundError:
         log.warning("Signature file not found: %s", sig_file)
-        return ""
+        result = ""
+    _signature_cache[sig_file] = result
+    return result
 
 
 def _reply_tag(draft_mode: bool) -> str:
@@ -199,12 +208,16 @@ def _classification_banner(classification: dict, is_draft: bool) -> str:
 # --- Handlers ---
 
 
-def _handle_forward(graph, user_email, msg_id, rule, classification, dry_run):
+def _handle_forward(graph, user_email, msg_id, rule, config, classification, dry_run):
     dest = rule["destination"]
     if dry_run:
         return f"[DRY-RUN] forward -> {dest['address']}"
     banner = _classification_banner(classification, graph.draft_mode)
-    graph.forward_email(user_email, msg_id, dest["name"], dest["address"], body_prefix=banner)
+    signature = _load_signature(config)
+    graph.forward_email(
+        user_email, msg_id, dest["name"], dest["address"],
+        body_prefix=banner, body_suffix=signature,
+    )
     tag = TAG_DRAFT_FORWARD if graph.draft_mode else TAG_FORWARDED
     graph.update_email(user_email, msg_id, is_read=True, add_categories=[tag])
     mode = "draft forward" if graph.draft_mode else "forwarded"
@@ -443,6 +456,7 @@ _HANDLERS = {
         ctx["user_email"],
         ctx["msg_id"],
         ctx["rule"],
+        ctx["config"],
         ctx["classification"],
         ctx["dry_run"],
     ),

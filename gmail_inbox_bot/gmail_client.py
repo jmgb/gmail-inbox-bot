@@ -338,6 +338,7 @@ class GmailClient:
         to_address: str,
         *,
         body_prefix: str = "",
+        body_suffix: str = "",
     ) -> None:
         # Get original message for body
         resp = self._request(
@@ -354,6 +355,8 @@ class GmailClient:
             subject = f"Fwd: {subject}"
 
         html_body = f"{body_prefix}<hr>{original_body}" if body_prefix else f"<hr>{original_body}"
+        if body_suffix:
+            html_body += body_suffix
 
         msg = MIMEText(html_body, "html", "utf-8")
         msg["To"] = f"{to_name} <{to_address}>"

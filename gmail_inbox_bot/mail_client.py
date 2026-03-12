@@ -109,6 +109,7 @@ class MailClient(Protocol):
         to_address: str,
         *,
         body_prefix: str = "",
+        body_suffix: str = "",
     ) -> None:
         """Forward message (or create draft forward)."""
         ...

@@ -1,0 +1,42 @@
+name: Deploy Gmail Inbox Bot
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest -q
+
+  deploy:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/services/gmail-inbox-bot
+            git pull origin main --ff-only
+            docker compose -f docker-compose.production.yml up -d --build
+            sleep 5
+            docker ps --filter name=gmail-inbox-bot --format '{{.Status}}' | grep -q 'Up' || exit 1

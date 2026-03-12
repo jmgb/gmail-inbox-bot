@@ -1,0 +1,48 @@
+name: miguelgutierrezbarquin
+email: miguelgutierrezbarquin@gmail.com
+refresh_token_env: GOOGLE_REFRESH_TOKEN_MIGUELGUTIERREZBARQUIN
+# send_as: alias@midominio.com  # descomentar si hay alias configurado
+query: is:unread in:inbox
+
+classifier:
+  prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
+  # model: gpt-5.2-2025-12-11  # descomentar para override del modelo
+
+max_emails_per_poll: 50
+poll_interval_seconds: 60
+
+# --- Routing: qué hacer con cada categoría ---
+routing:
+  personal:
+    action: move
+    folder: REVISAR
+    is_read: false
+
+  finanzas:
+    action: move
+    folder: REVISAR
+    is_read: false
+
+  compras:
+    action: move
+    folder: Compras
+
+  newsletters:
+    action: move
+    folder: Suscripciones
+
+  notificaciones:
+    action: move
+    folder: Notificaciones
+
+  automatico:
+    action: silent
+    folder: Automatico
+
+  spam:
+    action: delete
+
+  otros:
+    action: move
+    folder: REVISAR
+    is_read: false
