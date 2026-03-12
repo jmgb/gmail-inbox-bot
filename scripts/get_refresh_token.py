@@ -29,7 +29,9 @@ def find_client_secret(path_arg: str | None = None) -> Path:
     matches = list(Path(".").glob("client_secret_*.json"))
     if not matches:
         print("ERROR: No se encontró client_secret_*.json en el directorio actual.")
-        print("Pasa la ruta como argumento: python scripts/get_refresh_token.py /ruta/al/archivo.json")
+        print(
+            "Pasa la ruta como argumento: python scripts/get_refresh_token.py /ruta/al/archivo.json"
+        )
         sys.exit(1)
     return matches[0]
 
@@ -102,7 +104,7 @@ def main() -> None:
 
     print(f"\n=== Token obtenido para {email} ===\n")
     print(f"GOOGLE_REFRESH_TOKEN={refresh_token}")
-    print(f"\nAñade al .env con un nombre descriptivo:")
+    print("\nAñade al .env con un nombre descriptivo:")
     print(f"GOOGLE_REFRESH_TOKEN_{email.split('@')[0].upper()}={refresh_token}")
 
 

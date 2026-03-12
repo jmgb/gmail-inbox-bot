@@ -215,8 +215,12 @@ def _handle_forward(graph, user_email, msg_id, rule, config, classification, dry
     banner = _classification_banner(classification, graph.draft_mode)
     signature = _load_signature(config)
     graph.forward_email(
-        user_email, msg_id, dest["name"], dest["address"],
-        body_prefix=banner, body_suffix=signature,
+        user_email,
+        msg_id,
+        dest["name"],
+        dest["address"],
+        body_prefix=banner,
+        body_suffix=signature,
     )
     tag = TAG_DRAFT_FORWARD if graph.draft_mode else TAG_FORWARDED
     graph.update_email(user_email, msg_id, is_read=True, add_categories=[tag])

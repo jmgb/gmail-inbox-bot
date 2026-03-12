@@ -18,6 +18,8 @@ from .mail_processing import (
     extract_original_sender,
     strip_html,
 )
+from .notifications import NOTIFY_CATEGORIES, notify_important_email
+from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
 
@@ -137,7 +139,18 @@ def _process_email(
         gmail.update_email(config["email"], msg_id, is_read=False, add_categories=["ERROR IA"])
         return "classification failed — tagged ERROR IA"
 
-    # 5. Execute action
+    # 5. Notify important emails
+    categoria = classification.get("categoria", "")
+    if categoria in NOTIFY_CATEGORIES:
+        notify_important_email(
+            mailbox=config.get("email", ""),
+            categoria=categoria,
+            sender=f"{sender_name} <{sender}>" if sender_name else sender,
+            subject=subject,
+            razon=classification.get("razon_clasificacion", ""),
+        )
+
+    # 6. Execute action
     result = execute(
         gmail,
         config,
@@ -209,6 +222,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
         Run a single poll cycle and exit (useful for testing/cron).
     """
     env = load_env()
+    setup_telegram_logging(chat_id=os.environ.get("TELEGRAM_CHAT_ID"))
     openai_client = _build_openai_client(env)
     configs = load_mailbox_configs()
 
