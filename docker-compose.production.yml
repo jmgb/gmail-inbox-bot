@@ -3,9 +3,12 @@ services:
     build: .
     container_name: gmail-inbox-bot
     env_file: [.env]
+    ports:
+      - "8007:8000"
     volumes:
       - ./logs:/app/logs
       - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     networks: [pymechat-net]
     deploy:

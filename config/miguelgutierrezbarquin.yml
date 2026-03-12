@@ -11,6 +11,13 @@ classifier:
 max_emails_per_poll: 50
 poll_interval_seconds: 60
 
+# --- Pre-filtros: antes de clasificar, por remitente/asunto ---
+pre_filters:
+  - name: Banreservas (irrelevante)
+    match:
+      sender_contains: banreservas.com
+    action: silent
+
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:

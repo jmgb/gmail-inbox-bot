@@ -13,4 +13,4 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-CMD ["python", "-m", "gmail_inbox_bot"]
+CMD ["python", "-m", "gmail_inbox_bot", "--server"]

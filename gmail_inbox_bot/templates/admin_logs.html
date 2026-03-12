@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Gmail Bot - Log Viewer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        background: #2d2d30;
+        padding: 12px 20px;
+        border-bottom: 1px solid #3e3e42;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .header h1 {
+        font-size: 16px;
+        color: #4ec9b0;
+        margin: 0;
+        white-space: nowrap;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .log-selector {
+        background: #3c3c3c;
+        color: #d4d4d4;
+        border: 1px solid #3e3e42;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        font-size: 13px;
+        max-width: 220px;
+      }
+
+      .log-selector optgroup {
+        font-weight: bold;
+        color: #4ec9b0;
+      }
+
+      .log-selector option {
+        color: #d4d4d4;
+        background: #3c3c3c;
+      }
+
+      .log-selector:hover {
+        background: #4a4a4a;
+      }
+
+      .btn {
+        background: #0e639c;
+        color: white;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        background: #1177bb;
+      }
+
+      .btn-secondary {
+        background: #3c3c3c;
+      }
+
+      .btn-secondary:hover {
+        background: #4a4a4a;
+      }
+
+      .btn-download {
+        background: #2d7d46;
+      }
+
+      .btn-download:hover {
+        background: #369952;
+      }
+
+      .status {
+        font-size: 12px;
+        color: #858585;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      }
+
+      .status.live {
+        color: #4ec9b0;
+      }
+
+      .status::before {
+        content: "\25CF";
+        margin-right: 5px;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .search-bar {
+        background: #2d2d30;
+        padding: 8px 20px;
+        border-bottom: 1px solid #3e3e42;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .search-input {
+        flex: 1;
+        background: #3c3c3c;
+        color: #d4d4d4;
+        border: 1px solid #3e3e42;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .search-input:focus {
+        border-color: #0e639c;
+      }
+
+      .search-input::placeholder {
+        color: #6a6a6a;
+      }
+
+      .search-info {
+        font-size: 12px;
+        color: #858585;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        white-space: nowrap;
+      }
+
+      .log-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        background: #1e1e1e;
+      }
+
+      .log-content {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      .log-line {
+        border-left: 3px solid transparent;
+        padding-left: 10px;
+        margin-bottom: 1px;
+      }
+
+      .log-line:hover {
+        background: #2d2d30;
+        border-left-color: #4ec9b0;
+      }
+
+      .log-line.hidden {
+        display: none;
+      }
+
+      .error {
+        color: #f48771;
+      }
+
+      .warning {
+        color: #dcdcaa;
+      }
+
+      .info {
+        color: #4fc1ff;
+      }
+
+      .success {
+        color: #b5cea8;
+      }
+
+      .debug {
+        color: #858585;
+      }
+
+      .highlight {
+        background: #515c28;
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #858585;
+      }
+
+      .footer {
+        background: #2d2d30;
+        padding: 8px 20px;
+        border-top: 1px solid #3e3e42;
+        font-size: 12px;
+        color: #858585;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      }
+
+      .footer a {
+        color: #4ec9b0;
+        text-decoration: none;
+      }
+
+      .footer a:hover {
+        text-decoration: underline;
+      }
+
+      ::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: #1e1e1e;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #3e3e42;
+        border-radius: 5px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #4a4a4a;
+      }
+
+      @media (max-width: 768px) {
+        .header {
+          padding: 10px 12px;
+        }
+        .controls {
+          width: 100%;
+          justify-content: space-between;
+        }
+        .log-selector {
+          max-width: 140px;
+        }
+        .search-bar {
+          padding: 6px 12px;
+        }
+        .log-container {
+          padding: 10px 12px;
+        }
+        .footer {
+          padding: 6px 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Gmail Bot - Log Viewer</h1>
+      <div class="controls">
+        <select id="logSelector" class="log-selector" aria-label="Seleccionar fuente de log">
+          <optgroup label="App Logs">
+            {% for key in file_keys %}
+            <option value="{{ key }}" {% if key == "app" %}selected{% endif %}>{{ log_labels.get(key, key) }}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Docker Containers">
+            {% for key in docker_keys %}
+            <option value="{{ key }}">
+              {{ log_labels.get(key, key) }}
+            </option>
+            {% endfor %}
+          </optgroup>
+          {% if system_keys %}
+          <optgroup label="System Logs">
+            {% for key in system_keys %}
+            <option value="{{ key }}">{{ log_labels.get(key, key) }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+        <button class="btn" onclick="refreshLogs()" aria-label="Refrescar">Refresh</button>
+        <button class="btn btn-download" onclick="downloadLog()" aria-label="Descargar log">Download</button>
+        <button class="btn btn-secondary" onclick="toggleAutoRefresh()">
+          <span id="autoRefreshBtn">Pause</span>
+        </button>
+        <span class="status live" id="status">Live</span>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <input
+        type="text"
+        class="search-input"
+        id="searchInput"
+        placeholder="Filtrar logs... (Ctrl+F)"
+        aria-label="Filtrar logs"
+      />
+      <span class="search-info" id="searchInfo"></span>
+    </div>
+
+    <div class="log-container" id="logContainer">
+      <div class="log-content" id="logContent">
+        <div class="loading">Cargando logs...</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span id="logInfo">Lines: 0 | Size: 0 KB</span>
+      <span>
+        <a href="/admin/dashboard">Dashboard</a> &middot;
+        <a href="/health">Health</a>
+      </span>
+      <span id="lastUpdate">&Uacute;ltima actualizaci&oacute;n: -</span>
+    </div>
+
+    <script>
+      let autoRefresh = true;
+      let refreshInterval;
+      let currentLog = "app";
+      let allLogLines = [];
+
+      function classifyLine(line) {
+        if (
+          line.includes("ERROR") ||
+          line.includes("CRITICAL") ||
+          line.includes("\uD83D\uDEA8")
+        )
+          return "error";
+        if (line.includes("WARNING") || line.includes("\u26A0\uFE0F"))
+          return "warning";
+        if (line.includes("INFO") || line.includes("\u2705")) return "info";
+        if (line.includes("SUCCESS") || line.includes("\u2713"))
+          return "success";
+        if (line.includes("DEBUG")) return "debug";
+        return "";
+      }
+
+      function createLogLine(line) {
+        const div = document.createElement("div");
+        div.className = "log-line";
+        const cls = classifyLine(line);
+        if (cls) div.classList.add(cls);
+        div.textContent = line;
+        return div;
+      }
+
+      async function refreshLogs() {
+        try {
+          const container = document.getElementById("logContainer");
+          const wasAtBottom =
+            container.scrollHeight -
+              container.scrollTop -
+              container.clientHeight <
+            100;
+
+          const res = await fetch(
+            `/admin/logs/tail?log_name=${encodeURIComponent(currentLog)}&lines=500`,
+            { cache: "no-store" }
+          );
+
+          if (res.status === 401) {
+            window.location.href = "/admin/logs";
+            return;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          const text = await res.text();
+          const logContent = document.getElementById("logContent");
+          logContent.innerHTML = "";
+
+          allLogLines = text.split("\n");
+          if (
+            allLogLines.length > 1 &&
+            allLogLines[allLogLines.length - 1] === ""
+          ) {
+            allLogLines.pop();
+          }
+
+          allLogLines.forEach((line) => {
+            logContent.appendChild(createLogLine(line));
+          });
+
+          applySearch();
+
+          const lineCount = allLogLines.length;
+          const sizeKB = (new Blob([text]).size / 1024).toFixed(1);
+          document.getElementById(
+            "logInfo"
+          ).textContent = `Lines: ${lineCount} | Size: ${sizeKB} KB`;
+          document.getElementById(
+            "lastUpdate"
+          ).textContent = `\u00DAltima actualizaci\u00F3n: ${new Date().toLocaleTimeString()}`;
+
+          if (wasAtBottom) {
+            container.scrollTop = container.scrollHeight;
+          }
+        } catch (err) {
+          document.getElementById(
+            "logContent"
+          ).innerHTML = `<div class="error">Error cargando logs: ${err.message}</div>`;
+        }
+      }
+
+      function applySearch() {
+        const query = document
+          .getElementById("searchInput")
+          .value.trim()
+          .toLowerCase();
+        const lines = document.querySelectorAll("#logContent .log-line");
+        let matchCount = 0;
+
+        lines.forEach((el, idx) => {
+          if (!query) {
+            el.classList.remove("hidden");
+            if (allLogLines[idx] !== undefined) {
+              el.textContent = allLogLines[idx];
+            }
+            return;
+          }
+          const text = el.textContent.toLowerCase();
+          if (text.includes(query)) {
+            el.classList.remove("hidden");
+            matchCount++;
+            const raw = el.textContent;
+            const regex = new RegExp(
+              `(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+              "gi"
+            );
+            el.innerHTML = raw.replace(
+              regex,
+              '<span class="highlight">$1</span>'
+            );
+          } else {
+            el.classList.add("hidden");
+          }
+        });
+
+        const info = document.getElementById("searchInfo");
+        if (query) {
+          info.textContent = `${matchCount} coincidencias`;
+        } else {
+          info.textContent = "";
+        }
+      }
+
+      let searchTimeout;
+      document.getElementById("searchInput").addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(applySearch, 200);
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+          e.preventDefault();
+          document.getElementById("searchInput").focus();
+        }
+      });
+
+      function toggleAutoRefresh() {
+        autoRefresh = !autoRefresh;
+        const btn = document.getElementById("autoRefreshBtn");
+        const status = document.getElementById("status");
+
+        if (autoRefresh) {
+          btn.textContent = "Pause";
+          status.classList.add("live");
+          status.textContent = "Live";
+          startAutoRefresh();
+        } else {
+          btn.textContent = "Resume";
+          status.classList.remove("live");
+          status.textContent = "Paused";
+          stopAutoRefresh();
+        }
+      }
+
+      function startAutoRefresh() {
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(refreshLogs, 5000);
+      }
+
+      function stopAutoRefresh() {
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+          refreshInterval = null;
+        }
+      }
+
+      function downloadLog() {
+        window.open(
+          `/admin/logs/download/${encodeURIComponent(currentLog)}`,
+          "_blank"
+        );
+      }
+
+      document
+        .getElementById("logSelector")
+        .addEventListener("change", (e) => {
+          currentLog = e.target.value;
+          document.getElementById("logContent").innerHTML =
+            '<div class="loading">Cargando logs...</div>';
+          refreshLogs();
+        });
+
+      refreshLogs();
+      startAutoRefresh();
+
+      window.addEventListener("beforeunload", () => {
+        stopAutoRefresh();
+      });
+    </script>
+  </body>
+</html>

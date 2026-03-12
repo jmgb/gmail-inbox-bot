@@ -8,7 +8,7 @@ import time
 from openai import OpenAI
 
 from .actions import already_processed, execute
-from .classifier import classify_email, load_prompt
+from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
 from .logger import setup_logger
@@ -18,6 +18,7 @@ from .mail_processing import (
     extract_original_sender,
     strip_html,
 )
+from .metrics import record_email
 from .notifications import NOTIFY_CATEGORIES, notify_important_email
 from .telegram_logger import setup_telegram_logging
 
@@ -90,10 +91,20 @@ def _process_email(
     if already_processed(email_msg):
         return f"skipped (already processed) — {subject}"
 
+    mailbox_name = config.get("name", config.get("email", ""))
+
     # 2. Pre-filters
     pre_result = apply_pre_filters(gmail, config, email_msg, dry_run)
     if pre_result:
         log.info("[%s] %s | De: %s | Asunto: %s", msg_id, pre_result, sender, subject)
+        record_email(
+            mailbox=mailbox_name,
+            category="pre_filter",
+            action=pre_result,
+            msg_id=msg_id,
+            sender=sender,
+            subject=subject,
+        )
         return pre_result
 
     # 3. Enrich forwarded emails
@@ -107,6 +118,15 @@ def _process_email(
             msg_id,
             is_read=True,
             add_categories=["PENDIENTE GESTIONAR"],
+        )
+        record_email(
+            mailbox=mailbox_name,
+            category="error_no_classifier",
+            action="tag:PENDIENTE GESTIONAR",
+            msg_id=msg_id,
+            error=True,
+            sender=sender,
+            subject=subject,
         )
         return "no classifier available — tagged PENDIENTE GESTIONAR"
 
@@ -137,6 +157,16 @@ def _process_email(
     if not classification:
         log.error("[%s] Classification failed — De: %s | Asunto: %s", msg_id, sender, subject)
         gmail.update_email(config["email"], msg_id, is_read=False, add_categories=["ERROR IA"])
+        record_email(
+            mailbox=mailbox_name,
+            category="error_clasificacion",
+            action="tag:ERROR IA",
+            msg_id=msg_id,
+            model=model or DEFAULT_MODEL,
+            error=True,
+            sender=sender,
+            subject=subject,
+        )
         return "classification failed — tagged ERROR IA"
 
     # 5. Notify important emails
@@ -167,6 +197,20 @@ def _process_email(
         sender,
         subject,
     )
+
+    # 7. Record metric
+    record_email(
+        mailbox=mailbox_name,
+        category=categoria,
+        action=result,
+        msg_id=msg_id,
+        model=model or DEFAULT_MODEL,
+        draft_mode=gmail.draft_mode,
+        classification_reason=classification.get("razon_clasificacion"),
+        sender=sender,
+        subject=subject,
+    )
+
     return result
 
 
@@ -206,6 +250,14 @@ def process_mailbox(
                 gmail.update_email(user_email, msg_id, is_read=False, add_categories=["ERROR IA"])
             except Exception:
                 log.exception("Failed to tag ERROR IA on %s", msg_id)
+            record_email(
+                mailbox=config.get("name", user_email),
+                category="error_procesamiento",
+                msg_id=msg_id,
+                error=True,
+                sender=email_msg.get("from", {}).get("emailAddress", {}).get("address"),
+                subject=email_msg.get("subject", "")[:80],
+            )
             results.append(f"error — unhandled exception on {msg_id}")
 
     return results

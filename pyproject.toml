@@ -4,13 +4,17 @@ version = "0.1.0"
 description = "Email automation bot built on Gmail API"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.115.0",
     "google-api-python-client>=2.176.0",
     "google-auth>=2.40.3",
     "google-auth-oauthlib>=1.2.2",
     "httpx>=0.28.0",
+    "jinja2>=3.1.0",
     "openai>=1.60.0",
-    "pyyaml>=6.0",
     "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.9",
+    "pyyaml>=6.0",
+    "uvicorn>=0.30.0",
 ]
 
 [build-system]

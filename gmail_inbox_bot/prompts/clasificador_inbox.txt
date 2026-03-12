@@ -45,9 +45,35 @@ El email no encaja claramente en ninguna categoría anterior.
 ## razon_clasificacion
 Escribe en 1 frase breve el motivo de la clasificación elegida.
 
-# Reglas
+# Reglas generales
 - Elige siempre UNA SOLA categoría, la más relevante.
 - En caso de duda entre spam y newsletters, elige spam.
 - En caso de duda entre notificaciones y personal, elige personal.
 - "otros" es siempre el fallback seguro cuando no estés seguro.
 - No incluyas texto fuera del JSON en tu respuesta.
+- La razon_clasificacion SIEMPRE debe ser una frase descriptiva, nunca "string" ni un placeholder.
+
+# Reglas aprendidas de producción
+Estas reglas refinan la clasificación basándose en patrones reales observados.
+
+## Bancos, brokers y entidades financieras → finanzas (no otros)
+- Emails de bancos (bankia, bbva, santander, etc.) van a `finanzas` incluso si el body está vacío o solo tiene firma legal. El remitente bancario es señal suficiente.
+- Emails de brokers (interactivebrokers.com, degiro, etc.) con notificaciones de trades/operaciones → `finanzas`.
+- Excepción: banreservas.com se gestiona por pre-filtro, no llega al clasificador.
+
+## Cold outreach / prospección comercial → spam
+- Emails de desconocidos ofreciendo servicios B2B, "partnership", "pipeline", "demos" → `spam`.
+- Patrón: nombre personal + dominio desconocido + asunto genérico dirigido al usuario → `spam`.
+- Ejemplos: "Question for [nombre]", "regarding your pipeline", "[nombre], quick question".
+
+## Newsletters vs spam — señales clave
+- Si tiene link de "unsubscribe" + el usuario probablemente se suscribió (producto que usa, servicio contratado) → `newsletters`.
+- Si tiene link de "unsubscribe" + es marketing no solicitado o de empresa desconocida → `spam`.
+
+## Emails con body vacío o solo firma legal
+- Si el remitente es reconocible (banco, empresa conocida), clasificar por el remitente.
+- Si el remitente es desconocido y no hay body útil → `otros`.
+
+## Recordatorios de acción requerida → personal (no automatico)
+- Emails tipo "Signature Required", "Action Required", "Please review" de servicios que requieren acción del usuario → `personal` si es urgente/importante, `notificaciones` si es rutinario.
+- Solo marcar `automatico` si realmente NO requiere ninguna acción (out-of-office, confirmaciones sin acción).

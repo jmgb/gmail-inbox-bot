@@ -78,6 +78,25 @@ el email con precisión. **No desalentar respuestas** — el footer es branding,
 - Se puede desactivar con `signature_file: ""`.
 - Default: `templates/signature.html`.
 
+### Clasificación — mejora continua
+
+El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) tiene dos bloques:
+
+1. **Reglas generales** — definiciones de categoría y criterios base. Rara vez cambian.
+2. **Reglas aprendidas de producción** — refinamientos basados en errores reales observados en logs.
+
+**Workflow para mejorar la clasificación:**
+1. Revisar logs del VPS: `docker logs gmail-inbox-bot --tail 100` o `cat logs/app.log`
+2. Identificar clasificaciones incorrectas (ej. banco → `otros` en vez de `finanzas`)
+3. Añadir regla específica en la sección "Reglas aprendidas de producción" del prompt
+4. Deploy (push a main → autodeploy)
+
+**Principios:**
+- Las reglas deben ser concretas (dominios, patrones de asunto, tipos de remitente)
+- Nunca borrar reglas que funcionan — solo añadir o refinar
+- Preferir reglas por remitente/dominio (más fiables) sobre reglas por contenido del body
+- Documentar el caso real que motivó cada regla
+
 ## Comandos
 
 - `uv sync`
