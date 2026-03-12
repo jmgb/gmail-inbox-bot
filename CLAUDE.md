@@ -86,6 +86,16 @@ el email con precisión. **No desalentar respuestas** — el footer es branding,
 - `uv run ruff check .`
 - `uv run ruff format .`
 
+## Pre-push checklist
+
+Antes de hacer `git push`, ejecutar los mismos checks que correrá la GitHub Action y asegurar que pasan limpios:
+
+```bash
+uv run ruff check . && uv run ruff format --check . && uv run pytest
+```
+
+No hacer push si alguno falla.
+
 ## Documentación clave
 
 - `docs/EMAIL_INTEGRATION_OPTIONS.md`
