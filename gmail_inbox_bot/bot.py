@@ -20,6 +20,7 @@ from .mail_processing import (
 )
 from .metrics import record_email
 from .notifications import NOTIFY_CATEGORIES, notify_important_email
+from .sheets import build_sheets_client
 from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
@@ -288,6 +289,12 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     clients: list[tuple[GmailClient, dict]] = []
     for config in configs:
         gmail = _build_gmail_client(env, config)
+        # Inject SheetsClient if configured (for ib_trade pre-filter)
+        sheets_id = config.get("sheets_id", "")
+        if sheets_id:
+            token_var = config.get("refresh_token_env", "")
+            refresh_token = os.environ.get(token_var, "") if token_var else ""
+            config["_sheets_client"] = build_sheets_client(env, refresh_token, sheets_id)
         clients.append((gmail, config))
 
     log.info(

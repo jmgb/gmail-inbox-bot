@@ -1,5 +1,7 @@
 """Tests for pre-filter logic in bot.py."""
 
+from unittest.mock import patch
+
 from gmail_inbox_bot.mail_processing import apply_pre_filters
 
 
@@ -272,3 +274,76 @@ class TestApplyPreFilters:
         )
         result3 = apply_pre_filters(graph, config, msg3, dry_run=False)
         assert result3 is None
+
+    # ---- ib_trade action ----
+
+    @patch("gmail_inbox_bot.mail_processing.notify_trade")
+    def test_ib_trade_parses_and_notifies(self, mock_notify, graph, config, make_email):
+        config["pre_filters"] = [
+            {
+                "name": "IB Trading",
+                "match": {"sender_contains": "tradingassistant@interactivebrokers.com"},
+                "action": "ib_trade",
+                "folder": "Trading",
+            }
+        ]
+        msg = make_email(
+            sender_address="TradingAssistant@interactivebrokers.com",
+            subject="SOLD 1,511 VEEA @ 0.5722 (UXXX55709)",
+        )
+
+        result = apply_pre_filters(graph, config, msg, dry_run=False)
+
+        assert "ib_trade" in result
+        assert "SOLD" in result
+        mock_notify.assert_called_once()
+        trade = mock_notify.call_args[0][0]
+        assert trade.side == "SOLD"
+        assert trade.quantity == 1511
+        assert trade.ticker == "VEEA"
+        assert trade.price == 0.5722
+        graph.update_email.assert_called_once()
+        graph.move_email.assert_called_once()
+
+    @patch("gmail_inbox_bot.mail_processing.notify_trade")
+    def test_ib_trade_unparseable_still_processes(self, mock_notify, graph, config, make_email):
+        config["pre_filters"] = [
+            {
+                "name": "IB Trading",
+                "match": {"sender_contains": "tradingassistant@interactivebrokers.com"},
+                "action": "ib_trade",
+                "folder": "Trading",
+            }
+        ]
+        msg = make_email(
+            sender_address="TradingAssistant@interactivebrokers.com",
+            subject="Your daily statement is ready",
+        )
+
+        result = apply_pre_filters(graph, config, msg, dry_run=False)
+
+        assert "ib_trade" in result
+        mock_notify.assert_not_called()
+        graph.update_email.assert_called_once()
+        graph.move_email.assert_called_once()
+
+    @patch("gmail_inbox_bot.mail_processing.notify_trade")
+    def test_ib_trade_no_folder(self, mock_notify, graph, config, make_email):
+        config["pre_filters"] = [
+            {
+                "name": "IB Trading",
+                "match": {"sender_contains": "tradingassistant@interactivebrokers.com"},
+                "action": "ib_trade",
+            }
+        ]
+        msg = make_email(
+            sender_address="TradingAssistant@interactivebrokers.com",
+            subject="BOT 500 AAPL @ 182.50 (U123)",
+        )
+
+        result = apply_pre_filters(graph, config, msg, dry_run=False)
+
+        assert "ib_trade" in result
+        mock_notify.assert_called_once()
+        graph.update_email.assert_called_once()
+        graph.move_email.assert_not_called()

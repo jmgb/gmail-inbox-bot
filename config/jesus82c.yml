@@ -11,6 +11,18 @@ classifier:
 max_emails_per_poll: 50
 poll_interval_seconds: 60
 
+# Google Sheets — log de trades IB
+sheets_id: 1dOzjMMvbk-6zcaj3aV62frIsygSQpsV0jkdsVGJIpaM
+
+# --- Pre-filtros: antes de clasificar, por remitente/asunto ---
+pre_filters:
+  - name: IB Trading Assistant
+    match:
+      sender_contains: tradingassistant@interactivebrokers.com
+    action: ib_trade
+    folder: Trading
+    sheets_tab: Sheet1
+
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:
