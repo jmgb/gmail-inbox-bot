@@ -32,6 +32,13 @@ Google deprecó el flujo OOB (`urn:ietf:wg:oauth:2.0:oob`). Usar **localhost red
 
 ## Reglas de diseño
 
+### Prohibido borrar emails sin confirmación
+
+**NUNCA** borrar permanentemente emails, labels, ni datos de Gmail sin confirmación explícita del
+usuario. Mover a papelera (`messages/{id}/trash`) es aceptable — los emails son recuperables 30 días.
+Lo prohibido es: borrado permanente, vaciar papelera, borrar labels, o cualquier acción irreversible
+sobre el buzón. Siempre preguntar antes de ejecutar acciones destructivas.
+
 ### Gmail como fuente de verdad
 
 El bot debe leer y escribir sobre el mismo sistema donde viven los emails.
