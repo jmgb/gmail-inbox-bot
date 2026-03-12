@@ -1,4 +1,4 @@
-"""Google Sheets client — append rows using OAuth2 credentials (same as Gmail)."""
+"""Google Sheets client — read, insert, and write rows using OAuth2 credentials."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ class SheetsClient:
         self.spreadsheet_id = spreadsheet_id
         self._access_token: str | None = None
         self._http = httpx.Client(timeout=15.0)
+        self._sheet_id_cache: dict[str, int] = {}
 
     def _refresh_access_token(self) -> str:
         resp = self._http.post(
@@ -67,16 +68,28 @@ class SheetsClient:
         resp.raise_for_status()
         return resp
 
-    def append_row(self, values: list, *, sheet: str = "Sheet1") -> None:
-        """Append a single row to the specified sheet.
+    def _get_sheet_id(self, sheet_name: str) -> int:
+        """Get the numeric sheetId for a tab name (needed for batchUpdate)."""
+        if sheet_name in self._sheet_id_cache:
+            return self._sheet_id_cache[sheet_name]
+        url = f"{SHEETS_API}/{self.spreadsheet_id}"
+        resp = self._request("GET", url)
+        for s in resp.json().get("sheets", []):
+            name = s["properties"]["title"]
+            sid = s["properties"]["sheetId"]
+            self._sheet_id_cache[name] = sid
+        if sheet_name not in self._sheet_id_cache:
+            raise ValueError(f"Sheet tab '{sheet_name}' not found")
+        return self._sheet_id_cache[sheet_name]
 
-        Parameters
-        ----------
-        values:
-            List of cell values (strings, numbers) for one row.
-        sheet:
-            Tab name within the spreadsheet (default: "Sheet1").
-        """
+    def read_range(self, range_str: str) -> list[list[str]]:
+        """Read a range and return rows as lists of strings."""
+        url = f"{SHEETS_API}/{self.spreadsheet_id}/values/{range_str}"
+        resp = self._request("GET", url)
+        return resp.json().get("values", [])
+
+    def append_row(self, values: list, *, sheet: str = "Sheet1") -> None:
+        """Append a single row at the end of the sheet."""
         url = (
             f"{SHEETS_API}/{self.spreadsheet_id}/values/{sheet}!A:Z:append"
             f"?valueInputOption=USER_ENTERED"
@@ -85,6 +98,56 @@ class SheetsClient:
         body = {"values": [values]}
         self._request("POST", url, json=body)
         log.info("Appended row to %s: %s", sheet, values)
+
+    def insert_row_at(self, row_index: int, values: list, *, sheet: str = "Resumen") -> None:
+        """Insert a blank row at row_index (1-based) and write values into it.
+
+        Steps:
+        1. Insert an empty row via batchUpdate (insertDimension).
+        2. Write values into the newly inserted row via values.update.
+        """
+        sheet_id = self._get_sheet_id(sheet)
+
+        # Insert empty row (API uses 0-based index)
+        insert_url = f"{SHEETS_API}/{self.spreadsheet_id}:batchUpdate"
+        insert_body = {
+            "requests": [
+                {
+                    "insertDimension": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row_index - 1,
+                            "endIndex": row_index,
+                        },
+                        "inheritFromBefore": True,
+                    }
+                }
+            ]
+        }
+        self._request("POST", insert_url, json=insert_body)
+
+        # Write values into the new row
+        write_url = (
+            f"{SHEETS_API}/{self.spreadsheet_id}/values/{sheet}!A{row_index}"
+            f"?valueInputOption=USER_ENTERED"
+        )
+        self._request("PUT", write_url, json={"values": [values]})
+        log.info("Inserted row at %s!A%d: %s", sheet, row_index, values)
+
+    def find_insert_row(self, *, sheet: str = "Resumen", search_from: int = 43) -> int:
+        """Find the row to insert before: first non-empty row after search_from.
+
+        Scans column A from search_from downward. Returns the row number of the
+        first cell with content, so the caller can insert just above it.
+        """
+        range_str = f"{sheet}!A{search_from}:A200"
+        rows = self.read_range(range_str)
+        for i, row in enumerate(rows):
+            if row and row[0].strip():
+                return search_from + i
+        # No content found — insert at search_from
+        return search_from
 
 
 def build_sheets_client(

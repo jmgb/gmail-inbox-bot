@@ -80,21 +80,29 @@ def notify_trade(trade: Trade, mailbox: str) -> None:
     enviar_mensaje_telegram("\n".join(lines), referencia="ib_trade")
 
 
-def record_trade(trade: Trade, sheets: SheetsClient | None, *, sheet: str = "Sheet1") -> None:
-    """Append a trade row to Google Sheets."""
+def _build_trade_row(trade: Trade) -> list:
+    """Build a row matching the Resumen tab structure.
+
+    Columns: A=ticker, B=acciones venta, C=precio venta, D=comision,
+             E=(empty), F=acciones compra, G=precio compra, H=comision
+    """
+    if trade.side == "SOLD":
+        return [trade.ticker, trade.quantity, trade.price, "", "", "", "", ""]
+    else:  # BUY
+        return [trade.ticker, "", "", "", "", trade.quantity, trade.price, ""]
+
+
+def record_trade(trade: Trade, sheets: SheetsClient | None, *, sheet: str = "Resumen") -> None:
+    """Insert a trade row into Google Sheets above the first existing trade row.
+
+    Finds the first non-empty row after row 42 in the Resumen tab,
+    inserts a new row just above it, and writes the trade data.
+    """
     if not sheets:
         return
-    total = trade.quantity * trade.price
-    row = [
-        trade.timestamp,
-        trade.side,
-        trade.ticker,
-        trade.quantity,
-        trade.price,
-        round(total, 2),
-        trade.account,
-    ]
     try:
-        sheets.append_row(row, sheet=sheet)
+        insert_at = sheets.find_insert_row(sheet=sheet, search_from=43)
+        row = _build_trade_row(trade)
+        sheets.insert_row_at(insert_at, row, sheet=sheet)
     except Exception:
         log.exception("Failed to write trade to Sheets")

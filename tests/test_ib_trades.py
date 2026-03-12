@@ -2,7 +2,13 @@
 
 from unittest.mock import MagicMock, patch
 
-from gmail_inbox_bot.ib_trades import Trade, notify_trade, parse_trade, record_trade
+from gmail_inbox_bot.ib_trades import (
+    Trade,
+    _build_trade_row,
+    notify_trade,
+    parse_trade,
+    record_trade,
+)
 
 
 class TestParseTrade:
@@ -94,24 +100,48 @@ class TestNotifyTrade:
         assert "\U0001f7e2" in msg  # green circle for BUY
 
 
+class TestBuildTradeRow:
+    def test_sold_fills_left_columns(self):
+        trade = Trade(
+            side="SOLD", quantity=1511, ticker="VEEA",
+            price=0.5722, account="UXXX55709",
+            timestamp="2026-03-12T15:37:00+01:00",
+        )
+        row = _build_trade_row(trade)
+        # A=ticker, B=qty, C=price, D=comision, E=empty, F-H=empty
+        assert row[0] == "VEEA"
+        assert row[1] == 1511
+        assert row[2] == 0.5722
+        assert row[5] == ""  # no buy data
+
+    def test_buy_fills_right_columns(self):
+        trade = Trade(
+            side="BUY", quantity=500, ticker="AAPL",
+            price=182.50, account="U123",
+            timestamp="2026-03-12T15:37:00+01:00",
+        )
+        row = _build_trade_row(trade)
+        assert row[0] == "AAPL"
+        assert row[1] == ""  # no sell data
+        assert row[5] == 500
+        assert row[6] == 182.50
+
+
 class TestRecordTrade:
-    def test_appends_row_to_sheets(self):
+    def test_inserts_row_at_correct_position(self):
         sheets = MagicMock()
+        sheets.find_insert_row.return_value = 54
         trade = Trade(
             side="SOLD", quantity=1511, ticker="VEEA",
             price=0.5722, account="UXXX55709",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         record_trade(trade, sheets)
-        sheets.append_row.assert_called_once()
-        row = sheets.append_row.call_args[0][0]
-        assert row[0] == "2026-03-12T15:37:00+01:00"
-        assert row[1] == "SOLD"
-        assert row[2] == "VEEA"
-        assert row[3] == 1511
-        assert row[4] == 0.5722
-        assert row[5] == round(1511 * 0.5722, 2)
-        assert row[6] == "UXXX55709"
+        sheets.find_insert_row.assert_called_once_with(sheet="Resumen", search_from=43)
+        sheets.insert_row_at.assert_called_once()
+        call_args = sheets.insert_row_at.call_args
+        assert call_args[0][0] == 54  # insert at row 54
+        assert call_args[0][1][0] == "VEEA"  # ticker
 
     def test_none_sheets_is_noop(self):
         trade = Trade(
@@ -123,7 +153,7 @@ class TestRecordTrade:
 
     def test_sheets_error_does_not_propagate(self):
         sheets = MagicMock()
-        sheets.append_row.side_effect = Exception("API error")
+        sheets.find_insert_row.side_effect = Exception("API error")
         trade = Trade(
             side="BUY", quantity=100, ticker="AAPL",
             price=150.0, account="U123",
