@@ -95,12 +95,13 @@ def _process_email(
     mailbox_name = config.get("name", config.get("email", ""))
 
     # 2. Pre-filters
-    pre_result = apply_pre_filters(gmail, config, email_msg, dry_run)
-    if pre_result:
+    pre_match = apply_pre_filters(gmail, config, email_msg, dry_run)
+    if pre_match:
+        pre_result, filter_name = pre_match
         log.info("[%s] %s | De: %s | Asunto: %s", msg_id, pre_result, sender, subject)
         record_email(
             mailbox=mailbox_name,
-            category="pre_filter",
+            category=f"pre_filter:{filter_name}",
             action=pre_result,
             msg_id=msg_id,
             sender=sender,

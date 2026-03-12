@@ -26,9 +26,12 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="notifications@ansmtp.ariba.com")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        match = apply_pre_filters(graph, config, msg, dry_run=False)
 
+        assert match is not None
+        result, name = match
         assert "silent" in result
+        assert name == "Block Ariba"
         graph.update_email.assert_called_once_with("test@example.com", msg["id"], is_read=True)
 
     def test_sender_contains_no_match(self, graph, config, make_email):
@@ -56,7 +59,7 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="laura@pactomundial.org")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "silent" in result
 
@@ -80,7 +83,7 @@ class TestApplyPreFilters:
         # Other internal SHOULD match
         graph.reset_mock()
         msg2 = make_email(sender_address="laura@pactomundial.org")
-        result2 = apply_pre_filters(graph, config, msg2, dry_run=False)
+        result2, _name = apply_pre_filters(graph, config, msg2, dry_run=False)
         assert "PENDIENTE GESTIONAR" in result2
 
     def test_tag_and_move_action(self, graph, config, make_email):
@@ -95,7 +98,7 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="laura@pactomundial.org")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "INTERNO" in result
         assert "Internos" in result
@@ -114,7 +117,7 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="news@spam.com")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "delete" in result
         graph.delete_email.assert_called_once_with("test@example.com", msg["id"])
@@ -134,10 +137,11 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="juan@empresa.com")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "Filter A" in result
         assert "silent" in result
+        assert name == "Filter A"
         graph.delete_email.assert_not_called()
 
     def test_dry_run_no_actions(self, graph, config, make_email):
@@ -150,7 +154,7 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="x@ariba.com")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=True)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=True)
 
         assert "[DRY-RUN]" in result
         graph.update_email.assert_not_called()
@@ -165,9 +169,10 @@ class TestApplyPreFilters:
         ]
         msg = make_email(sender_address="LAURA@pactomundial.ORG")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        match = apply_pre_filters(graph, config, msg, dry_run=False)
 
-        assert result is not None
+        assert match is not None
+        result, _name = match
         assert "silent" in result
 
     # ---- subject_contains / subject_not_contains ----
@@ -182,9 +187,10 @@ class TestApplyPreFilters:
         ]
         msg = make_email(subject="No se puede entregar: SAVE THE DATE")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        match = apply_pre_filters(graph, config, msg, dry_run=False)
 
-        assert result is not None
+        assert match is not None
+        result, _name = match
         assert "silent" in result
 
     def test_subject_contains_no_match(self, graph, config, make_email):
@@ -211,9 +217,10 @@ class TestApplyPreFilters:
         ]
         msg = make_email(subject="UNDELIVERABLE: Your message")
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        match = apply_pre_filters(graph, config, msg, dry_run=False)
 
-        assert result is not None
+        assert match is not None
+        result, _name = match
         assert "silent" in result
 
     def test_subject_not_contains_excludes(self, graph, config, make_email):
@@ -233,8 +240,9 @@ class TestApplyPreFilters:
 
         graph.reset_mock()
         msg2 = make_email(subject="Undeliverable: Regular bounce")
-        result2 = apply_pre_filters(graph, config, msg2, dry_run=False)
-        assert result2 is not None
+        match2 = apply_pre_filters(graph, config, msg2, dry_run=False)
+        assert match2 is not None
+        result2, _name = match2
         assert "silent" in result2
 
     def test_sender_and_subject_combined(self, graph, config, make_email):
@@ -254,8 +262,8 @@ class TestApplyPreFilters:
             sender_address="postmaster@outlook.com",
             subject="Undeliverable: Your message",
         )
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
-        assert result is not None
+        match = apply_pre_filters(graph, config, msg, dry_run=False)
+        assert match is not None
 
         # Only sender matches
         graph.reset_mock()
@@ -292,10 +300,11 @@ class TestApplyPreFilters:
             subject="SOLD 1,511 VEEA @ 0.5722 (UXXX55709)",
         )
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "ib_trade" in result
         assert "SOLD" in result
+        assert name == "IB Trading"
         mock_notify.assert_called_once()
         trade = mock_notify.call_args[0][0]
         assert trade.side == "SOLD"
@@ -320,7 +329,7 @@ class TestApplyPreFilters:
             subject="Your daily statement is ready",
         )
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "ib_trade" in result
         mock_notify.assert_not_called()
@@ -341,7 +350,7 @@ class TestApplyPreFilters:
             subject="BOT 500 AAPL @ 182.50 (U123)",
         )
 
-        result = apply_pre_filters(graph, config, msg, dry_run=False)
+        result, _name = apply_pre_filters(graph, config, msg, dry_run=False)
 
         assert "ib_trade" in result
         mock_notify.assert_called_once()

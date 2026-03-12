@@ -97,10 +97,30 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 - Preferir reglas por remitente/dominio (más fiables) sobre reglas por contenido del body
 - Documentar el caso real que motivó cada regla
 
+## Despliegue
+
+- **VPS**: `158.69.215.223` (usuario `ubuntu`)
+- **Ruta en VPS**: `/home/ubuntu/services/gmail-inbox-bot`
+- **Deploy automático**: push a `main` → GitHub Action (`deploy-vps.yml`) → `git pull` + `docker compose up -d --build`
+- **Puerto**: `8007` (mapeado a `8000` interno)
+- **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
+- **Log Viewer**: https://email.pymechat.com/admin/logs
+- **Health**: https://email.pymechat.com/health
+- **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
+
+## Métricas (Supabase)
+
+- **Tabla**: `email_metrics` (mismo proyecto Supabase que pacto-mundial-bot)
+- **Escritura**: fire-and-forget en cada email procesado (`metrics.py`)
+- **Lectura**: dashboard vía `/admin/api/metrics`
+- **SQL migrations**: `scripts/supabase_create_table.sql`
+- **SQL runner**: `uv run python scripts/supabase_sql.py "SELECT ..."`
+
 ## Comandos
 
 - `uv sync`
 - `uv run python -m gmail_inbox_bot`
+- `uv run python -m gmail_inbox_bot --server` (FastAPI + bot en background)
 - `uv run pytest`
 - `uv run ruff check .`
 - `uv run ruff format .`

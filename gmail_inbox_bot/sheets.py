@@ -159,9 +159,7 @@ def build_sheets_client(
     if not spreadsheet_id:
         return None
     client_id = env.get("GOOGLE_CLIENT_ID", os.environ.get("GOOGLE_CLIENT_ID", ""))
-    client_secret = env.get(
-        "GOOGLE_CLIENT_SECRET", os.environ.get("GOOGLE_CLIENT_SECRET", "")
-    )
+    client_secret = env.get("GOOGLE_CLIENT_SECRET", os.environ.get("GOOGLE_CLIENT_SECRET", ""))
     if not client_id or not client_secret:
         log.warning("Missing GOOGLE_CLIENT_ID/SECRET — Sheets disabled")
         return None

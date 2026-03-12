@@ -73,8 +73,11 @@ class TestNotifyTrade:
     @patch("gmail_inbox_bot.ib_trades.enviar_mensaje_telegram")
     def test_sell_notification(self, mock_send):
         trade = Trade(
-            side="SOLD", quantity=1511, ticker="VEEA",
-            price=0.5722, account="UXXX55709",
+            side="SOLD",
+            quantity=1511,
+            ticker="VEEA",
+            price=0.5722,
+            account="UXXX55709",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         notify_trade(trade, "miguel@gmail.com")
@@ -90,8 +93,11 @@ class TestNotifyTrade:
     @patch("gmail_inbox_bot.ib_trades.enviar_mensaje_telegram")
     def test_buy_notification(self, mock_send):
         trade = Trade(
-            side="BUY", quantity=500, ticker="AAPL",
-            price=182.50, account="U123",
+            side="BUY",
+            quantity=500,
+            ticker="AAPL",
+            price=182.50,
+            account="U123",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         notify_trade(trade, "test@gmail.com")
@@ -103,8 +109,11 @@ class TestNotifyTrade:
 class TestBuildTradeRow:
     def test_sold_fills_left_columns(self):
         trade = Trade(
-            side="SOLD", quantity=1511, ticker="VEEA",
-            price=0.5722, account="UXXX55709",
+            side="SOLD",
+            quantity=1511,
+            ticker="VEEA",
+            price=0.5722,
+            account="UXXX55709",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         row = _build_trade_row(trade)
@@ -116,8 +125,11 @@ class TestBuildTradeRow:
 
     def test_buy_fills_right_columns(self):
         trade = Trade(
-            side="BUY", quantity=500, ticker="AAPL",
-            price=182.50, account="U123",
+            side="BUY",
+            quantity=500,
+            ticker="AAPL",
+            price=182.50,
+            account="U123",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         row = _build_trade_row(trade)
@@ -132,8 +144,11 @@ class TestRecordTrade:
         sheets = MagicMock()
         sheets.find_insert_row.return_value = 54
         trade = Trade(
-            side="SOLD", quantity=1511, ticker="VEEA",
-            price=0.5722, account="UXXX55709",
+            side="SOLD",
+            quantity=1511,
+            ticker="VEEA",
+            price=0.5722,
+            account="UXXX55709",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         record_trade(trade, sheets)
@@ -145,8 +160,11 @@ class TestRecordTrade:
 
     def test_none_sheets_is_noop(self):
         trade = Trade(
-            side="BUY", quantity=100, ticker="AAPL",
-            price=150.0, account="U123",
+            side="BUY",
+            quantity=100,
+            ticker="AAPL",
+            price=150.0,
+            account="U123",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         record_trade(trade, None)  # should not raise
@@ -155,8 +173,11 @@ class TestRecordTrade:
         sheets = MagicMock()
         sheets.find_insert_row.side_effect = Exception("API error")
         trade = Trade(
-            side="BUY", quantity=100, ticker="AAPL",
-            price=150.0, account="U123",
+            side="BUY",
+            quantity=100,
+            ticker="AAPL",
+            price=150.0,
+            account="U123",
             timestamp="2026-03-12T15:37:00+01:00",
         )
         record_trade(trade, sheets)  # should not raise

@@ -10,8 +10,13 @@ from .logger import setup_logger
 log = setup_logger("gmail_inbox_bot.mail_processing", "logs/app.log")
 
 
-def apply_pre_filters(mail_client, config: dict, email_msg: dict, dry_run: bool) -> str | None:
-    """Evaluate pre-filters in order and execute the first matching action."""
+def apply_pre_filters(
+    mail_client, config: dict, email_msg: dict, dry_run: bool
+) -> tuple[str, str] | None:
+    """Evaluate pre-filters in order and execute the first matching action.
+
+    Returns (result_description, filter_name) or None if no filter matched.
+    """
     filters = config.get("pre_filters", [])
     if not filters:
         return None
@@ -60,16 +65,16 @@ def apply_pre_filters(mail_client, config: dict, email_msg: dict, dry_run: bool)
         name = pre_filter.get("name", "unnamed filter")
 
         if dry_run:
-            return f"[DRY-RUN] pre-filter '{name}' -> {action}"
+            return f"[DRY-RUN] pre-filter '{name}' -> {action}", name
 
         if action == "silent":
             mail_client.update_email(user_email, msg_id, is_read=True)
-            return f"pre-filter '{name}' -> silent"
+            return f"pre-filter '{name}' -> silent", name
 
         if action == "tag":
             tag = pre_filter.get("tag", TAG_PENDING_MANAGE)
             mail_client.update_email(user_email, msg_id, is_read=True, add_categories=[tag])
-            return f"pre-filter '{name}' -> tag {tag}"
+            return f"pre-filter '{name}' -> tag {tag}", name
 
         if action == "tag_and_move":
             tag = pre_filter.get("tag", TAG_PENDING_MANAGE)
@@ -78,11 +83,11 @@ def apply_pre_filters(mail_client, config: dict, email_msg: dict, dry_run: bool)
             mail_client.update_email(user_email, msg_id, is_read=True, add_categories=[tag])
             if folder:
                 mail_client.move_email(user_email, msg_id, folder, parent_folder=parent_folder)
-            return f"pre-filter '{name}' -> tag {tag} + move '{folder}'"
+            return f"pre-filter '{name}' -> tag {tag} + move '{folder}'", name
 
         if action == "delete":
             mail_client.delete_email(user_email, msg_id)
-            return f"pre-filter '{name}' -> delete"
+            return f"pre-filter '{name}' -> delete", name
 
         if action == "ib_trade":
             original_subject = email_msg.get("subject", "")
@@ -96,15 +101,19 @@ def apply_pre_filters(mail_client, config: dict, email_msg: dict, dry_run: bool)
                 record_trade(trade, sheets_client, sheet=sheets_tab)
                 log.info(
                     "[%s] IB trade: %s %s %s @ %.4f (%s)",
-                    msg_id, trade.side, trade.quantity, trade.ticker,
-                    trade.price, trade.account,
+                    msg_id,
+                    trade.side,
+                    trade.quantity,
+                    trade.ticker,
+                    trade.price,
+                    trade.account,
                 )
             else:
                 log.warning("[%s] IB trade subject not parseable: %s", msg_id, original_subject)
             mail_client.update_email(user_email, msg_id, is_read=True)
             if folder:
                 mail_client.move_email(user_email, msg_id, folder, parent_folder=parent_folder)
-            return f"pre-filter '{name}' -> ib_trade ({original_subject})"
+            return f"pre-filter '{name}' -> ib_trade ({original_subject})", name
 
     return None
 
