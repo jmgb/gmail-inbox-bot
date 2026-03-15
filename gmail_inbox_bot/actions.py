@@ -17,6 +17,7 @@ TAG_DRAFT_FORWARD = "BORRADOR REENVIO IA"
 TAG_PENDING_ATTACH = "PENDIENTE ADJUNTO"
 TAG_PENDING_MANAGE = "PENDIENTE GESTIONAR"
 TAG_ERROR = "ERROR IA"
+TAG_REVIEW = "REVISAR IA"
 PROCESSED_TAGS = {
     TAG_REPLIED,
     TAG_FORWARDED,
@@ -25,6 +26,7 @@ PROCESSED_TAGS = {
     TAG_PENDING_ATTACH,
     TAG_PENDING_MANAGE,
     TAG_ERROR,
+    TAG_REVIEW,
 }
 
 # --- Forwarded email support ---
@@ -233,9 +235,8 @@ def _handle_reply(graph, user_email, msg_id, email_msg, config, classification, 
     body_text, lang_key = _get_template_body(config, classification)
     if not body_text:
         log.warning("No template for categoria=%s, tagging PENDIENTE GESTIONAR", categoria)
-        return _handle_tag(
-            graph, user_email, msg_id, {"tag": TAG_PENDING_MANAGE}, dry_run, categoria
-        )
+        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
+        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, categoria)
 
     signature = _load_signature(config)
     html_body = _plain_to_html(body_text) + signature
@@ -323,14 +324,8 @@ def _handle_dynamic_reply(
             _subj,
             _received,
         )
-        return _handle_tag(
-            graph,
-            user_email,
-            msg_id,
-            {"tag": TAG_PENDING_MANAGE},
-            dry_run,
-            "dynamic_reply",
-        )
+        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
+        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, "dynamic_reply")
 
     if dry_run:
         return f"[DRY-RUN] dynamic_reply (model={model})"
@@ -406,10 +401,14 @@ def _handle_move(graph, user_email, msg_id, rule, dry_run, categoria, parent_fol
 
 def _handle_tag(graph, user_email, msg_id, rule, dry_run, categoria):
     tag = rule.get("tag", TAG_PENDING_MANAGE)
+    is_read = rule.get("is_read", True)
     if dry_run:
         return f"[DRY-RUN] tag {tag} ({categoria})"
-    graph.update_email(user_email, msg_id, is_read=True, add_categories=[tag])
-    return f"tagged {tag} ({categoria})"
+    graph.update_email(user_email, msg_id, is_read=is_read, add_categories=[tag])
+    result = f"tagged {tag} ({categoria})"
+    if not is_read:
+        result += " [marked unread]"
+    return result
 
 
 def _handle_tag_and_move(graph, user_email, msg_id, rule, dry_run, categoria, parent_folder=None):
@@ -566,9 +565,8 @@ def execute(
                 graph, user_email, msg_id, email_msg, config, classification, dry_run
             )
         log.warning("No routing/template for categoria=%s", categoria)
-        return _handle_tag(
-            graph, user_email, msg_id, {"tag": TAG_PENDING_MANAGE}, dry_run, categoria
-        )
+        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
+        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, categoria)
 
     action = rule.get("action", "tag")
     handler = _HANDLERS.get(action)
@@ -585,9 +583,8 @@ def execute(
             _subj,
             _received,
         )
-        return _handle_tag(
-            graph, user_email, msg_id, {"tag": TAG_PENDING_MANAGE}, dry_run, categoria
-        )
+        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
+        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, categoria)
 
     parent_folder = config.get("parent_folder")
     ctx = {
@@ -618,7 +615,8 @@ def execute(
                 result += f" + moved -> '{folder}'"
 
         # Override read status (e.g. is_read: false to keep email unread for manual follow-up)
-        if "is_read" in rule:
+        # Skip for "tag" — _handle_tag already respects is_read from the rule.
+        if "is_read" in rule and action != "tag":
             if not dry_run:
                 graph.update_email(user_email, msg_id, is_read=rule["is_read"])
             if not rule["is_read"]:

@@ -26,13 +26,13 @@ pre_filters:
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:
-    action: move
-    folder: REVISAR
-    is_read: false     # mantener sin leer para que el usuario lo note
+    action: tag
+    tag: REVISAR IA
+    is_read: false     # mantener sin leer en el inbox para que el usuario lo note
 
   finanzas:
-    action: move
-    folder: REVISAR
+    action: tag
+    tag: REVISAR IA
     is_read: false
 
   compras:
@@ -56,6 +56,6 @@ routing:
     action: delete       # mover a papelera
 
   otros:
-    action: move
-    folder: REVISAR
-    is_read: false       # fallback seguro: siempre a revisión manual
+    action: tag
+    tag: REVISAR IA
+    is_read: false       # fallback seguro: siempre a revisión manual en el inbox

@@ -55,22 +55,60 @@ Gmail usa labels. No modelar Outlook folders como si fueran equivalentes exactos
 
 No introducir complejidad multi-tenant o colas externas salvo requisito claro.
 
+### Premisa de inbox: relevante visible, ruido fuera
+
+**Principio**: los emails que requieren acción del usuario o son muy relevantes se quedan **sin leer
+en el inbox** con una etiqueta del bot. Todo lo demás se mueve a su carpeta correspondiente fuera
+del inbox.
+
+| Categoría | Destino | En INBOX | Unread | Motivo |
+|---|---|---|---|---|
+| `personal` | tag `REVISAR IA` | **Sí** | **Sí** | Requiere acción/respuesta del usuario |
+| `finanzas` | tag `REVISAR IA` | **Sí** | **Sí** | Verificación o acción financiera |
+| `otros` | tag `REVISAR IA` | **Sí** | **Sí** | Fallback seguro — revisión manual |
+| `compras` | carpeta `Compras` | No | No | Informativo, no requiere acción |
+| `notificaciones` | carpeta `Notificaciones` | No | No | Alertas de apps, no urgente |
+| `automatico` | carpeta `Automatico` | No | No | Out-of-office, noreply, sin acción |
+| `spam` | papelera | No | — | Basura |
+| `newsletters` | carpeta `Newsletters` | No | **Sí** | No requiere acción inmediata pero se conserva sin leer para lectura eventual |
+| error clasificador | tag `ERROR IA` | **Sí** | **Sí** | Fallo técnico pre-clasificación — revisar manualmente |
+| error config/acción | tag `PENDIENTE GESTIONAR` | **Sí** | **Sí** | Fallo post-clasificación (sin template, sin routing, acción desconocida) |
+
+**Newsletters**: se mueven fuera del inbox pero se mantienen sin leer (`is_read: false`). No son
+urgentes ni requieren acción, pero el usuario quiere poder revisarlas a su ritmo. El estado unread
+sirve como indicador de "pendiente de leer" dentro de la carpeta Newsletters.
+
+**Errores del clasificador** (`ERROR IA`): cuando falla la clasificación (sin OpenAI client, sin
+prompt, o error de la API), el email se etiqueta `ERROR IA` y se deja **sin leer en el inbox**.
+
+**Errores de configuración/acción** (`PENDIENTE GESTIONAR`): cuando la clasificación funciona pero
+falla la acción (sin template, sin routing, acción desconocida), se etiqueta `PENDIENTE GESTIONAR`
+y se deja **sin leer en el inbox**.
+
+Ambos tags están en `PROCESSED_TAGS`, así que el bot no los reprocesa. El usuario los ve y decide
+qué hacer.
+
 ### Idempotencia y prevención de bucles
 
-El bot solo procesa emails que cumplan el query `is:unread in:inbox`. La idempotencia se garantiza
-porque **toda acción quita el email del INBOX** (vía `move_email` que remueve el label `INBOX`).
+El bot tiene dos mecanismos de idempotencia:
 
-Flujo para categorías con `is_read: false` (ej. `personal`, `finanzas`, `otros` → REVISAR):
+1. **Acciones que quitan INBOX**: `move_email` remueve el label `INBOX`, así el query
+   `is:unread in:inbox` no lo encuentra en el siguiente poll.
+2. **`already_processed()`**: verifica si el email tiene algún tag de `PROCESSED_TAGS`
+   (ej. `RESPONDIDO IA`, `REVISAR IA`, `ERROR IA`). Si lo tiene, lo salta.
+
+**Flujo para categorías que se quedan en inbox** (`personal`, `finanzas`, `otros`):
 
 1. Email llega → labels: `INBOX`, `UNREAD`
-2. `move_email` → añade label destino (ej. `REVISAR`), quita `INBOX`, marca leído
+2. `_handle_tag` → añade label `REVISAR IA`, marca leído
 3. Override `is_read: false` → vuelve a poner `UNREAD`
-4. Estado final → labels: `REVISAR`, `UNREAD` (sin `INBOX`)
-5. Siguiente poll (`is:unread in:inbox`) → **no lo encuentra** → sin bucle
+4. Estado final → labels: `INBOX`, `UNREAD`, `REVISAR IA`
+5. Siguiente poll (`is:unread in:inbox`) → lo encuentra → `already_processed()` detecta
+   `REVISAR IA` ∈ `PROCESSED_TAGS` → **skip** → sin bucle
 
-El email queda sin leer bajo REVISAR para que el usuario lo note, pero es invisible para el bot.
+El email queda **sin leer en el inbox** para que el usuario lo vea, pero el bot no lo reprocesa.
 
-Para categorías sin `is_read: false` (ej. `compras`, `notificaciones`): el email queda leído y
+**Para categorías que salen del inbox** (ej. `compras`, `notificaciones`): el email queda leído y
 fuera del inbox — doblemente protegido.
 
 ### Firma / footer de emails

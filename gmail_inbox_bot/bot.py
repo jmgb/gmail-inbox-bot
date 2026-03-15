@@ -114,23 +114,23 @@ def _process_email(
 
     # 4. Classify
     if not openai_client:
-        log.warning("[%s] No OpenAI client — tagging PENDIENTE GESTIONAR", msg_id)
+        log.warning("[%s] No OpenAI client — tagging ERROR IA", msg_id)
         gmail.update_email(
             config["email"],
             msg_id,
-            is_read=True,
-            add_categories=["PENDIENTE GESTIONAR"],
+            is_read=False,
+            add_categories=["ERROR IA"],
         )
         record_email(
             mailbox=mailbox_name,
             category="error_no_classifier",
-            action="tag:PENDIENTE GESTIONAR",
+            action="tag:ERROR IA",
             msg_id=msg_id,
             error=True,
             sender=sender,
             subject=subject,
         )
-        return "no classifier available — tagged PENDIENTE GESTIONAR"
+        return "no classifier available — tagged ERROR IA"
 
     body_html = email_msg.get("body", {}).get("content", "")
     body_text = strip_html(body_html)
@@ -141,7 +141,22 @@ def _process_email(
     model = config.get("classifier", {}).get("model", "")
     if not prompt_file:
         log.error("[%s] No classifier.prompt_file in config", msg_id)
-        return "error — no prompt_file configured"
+        gmail.update_email(
+            config["email"],
+            msg_id,
+            is_read=False,
+            add_categories=["ERROR IA"],
+        )
+        record_email(
+            mailbox=mailbox_name,
+            category="error_no_prompt",
+            action="tag:ERROR IA",
+            msg_id=msg_id,
+            error=True,
+            sender=sender,
+            subject=subject,
+        )
+        return "error — no prompt_file configured, tagged ERROR IA"
 
     system_prompt = load_prompt(prompt_file)
     classify_kwargs: dict = {"model": model} if model else {}

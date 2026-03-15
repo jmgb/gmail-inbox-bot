@@ -163,10 +163,14 @@ class TestProcessEmail:
         assert "pre-filter" in result
         mock_gmail.update_email.assert_called_once()
 
-    def test_no_openai_tags_pendiente(self, mock_gmail, config):
+    def test_no_openai_tags_error(self, mock_gmail, config):
         msg = _make_email()
         result = _process_email(mock_gmail, None, config, msg)
-        assert "PENDIENTE GESTIONAR" in result
+        assert "ERROR IA" in result
+        mock_gmail.update_email.assert_called_once()
+        call_kwargs = mock_gmail.update_email.call_args
+        assert call_kwargs.kwargs["is_read"] is False
+        assert call_kwargs.kwargs["add_categories"] == ["ERROR IA"]
 
     @patch("gmail_inbox_bot.bot.classify_email")
     @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")

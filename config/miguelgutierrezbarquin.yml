@@ -21,13 +21,13 @@ pre_filters:
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:
-    action: move
-    folder: REVISAR
+    action: tag
+    tag: REVISAR IA
     is_read: false
 
   finanzas:
-    action: move
-    folder: REVISAR
+    action: tag
+    tag: REVISAR IA
     is_read: false
 
   compras:
@@ -51,6 +51,6 @@ routing:
     action: delete
 
   otros:
-    action: move
-    folder: REVISAR
+    action: tag
+    tag: REVISAR IA
     is_read: false
