@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from datetime import datetime, timezone
 from email import encoders
 from email.mime.base import MIMEBase
@@ -83,13 +84,43 @@ class GmailClient:
             self._refresh_access_token()
         return {"Authorization": f"Bearer {self._access_token}"}
 
-    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        """Make an authenticated request, retrying once on 401."""
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        _retries: int = 3,
+        _backoff: float = 1.0,
+        **kwargs,
+    ) -> httpx.Response:
+        """Make an authenticated request with retry logic.
+
+        Retries once on 401 (token refresh) and up to *_retries* times on 5xx
+        errors with exponential backoff.
+        """
         url = f"{BASE_URL}{path}" if path.startswith("/") else path
         resp = self._http.request(method, url, headers=self._headers(), **kwargs)
         if resp.status_code == 401:
             self._refresh_access_token()
             resp = self._http.request(method, url, headers=self._headers(), **kwargs)
+
+        # Retry on transient server errors (5xx)
+        attempt = 0
+        while resp.status_code >= 500 and attempt < _retries:
+            delay = _backoff * (2**attempt)
+            log.warning(
+                "Gmail API %s %s returned %s, retrying in %.1fs (%d/%d)",
+                method,
+                path,
+                resp.status_code,
+                delay,
+                attempt + 1,
+                _retries,
+            )
+            time.sleep(delay)
+            resp = self._http.request(method, url, headers=self._headers(), **kwargs)
+            attempt += 1
+
         resp.raise_for_status()
         return resp
 
