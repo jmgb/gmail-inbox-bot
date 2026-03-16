@@ -19,6 +19,25 @@ def load_prompt(prompt_file: str) -> str:
     return Path(prompt_file).read_text(encoding="utf-8")
 
 
+def _sanitize_reason(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    reason = value.strip()
+    if not reason:
+        return ""
+
+    lowered = reason.lower()
+    if lowered in {"string", "razon_clasificacion"}:
+        return ""
+
+    for prefix in ("razon_clasificacion:", "classification_reason:"):
+        if lowered.startswith(prefix):
+            return reason[len(prefix) :].strip()
+
+    return reason
+
+
 def classify_email(
     client: OpenAI,
     system_prompt: str,
@@ -54,7 +73,8 @@ def classify_email(
         result = json.loads(resp.output_text)
         categoria = result.get("categoria", "")
         idioma = result.get("idioma", "")
-        razon = result.get("razon_clasificacion", "")
+        razon = _sanitize_reason(result.get("razon_clasificacion", ""))
+        result["razon_clasificacion"] = razon
         log.info(
             "📋 Clasificación: categoria=%s | idioma=%s | razón=%s",
             categoria,

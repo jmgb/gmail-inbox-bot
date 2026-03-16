@@ -139,3 +139,60 @@ class TestClassifyEmail:
 
         call_kwargs = client.responses.create.call_args[1]
         assert call_kwargs["instructions"] == "CUSTOM SYSTEM PROMPT HERE"
+
+    def test_placeholder_reason_string_is_sanitized(self):
+        client = MagicMock()
+        client.responses.create.return_value = _mock_responses_response(
+            '{"categoria":"finanzas","razon_clasificacion":"string"}'
+        )
+
+        result = classify_email(
+            client,
+            "system prompt",
+            "Payment Reminder",
+            "body",
+            "Hetzner",
+            "billing@hetzner.com",
+            True,
+        )
+
+        assert result == {"categoria": "finanzas", "razon_clasificacion": ""}
+
+    def test_placeholder_reason_field_name_is_sanitized(self):
+        client = MagicMock()
+        client.responses.create.return_value = _mock_responses_response(
+            '{"categoria":"personal","razon_clasificacion":"razon_clasificacion"}'
+        )
+
+        result = classify_email(
+            client,
+            "system prompt",
+            "Annual Report 2025: Signature Required",
+            "body",
+            "Companio",
+            "noreply@companio.co",
+            False,
+        )
+
+        assert result == {"categoria": "personal", "razon_clasificacion": ""}
+
+    def test_reason_prefix_is_removed(self):
+        client = MagicMock()
+        client.responses.create.return_value = _mock_responses_response(
+            '{"categoria":"finanzas","razon_clasificacion":"razon_clasificacion: Trata sobre un recordatorio de pago"}'
+        )
+
+        result = classify_email(
+            client,
+            "system prompt",
+            "Payment Reminder",
+            "body",
+            "Katia",
+            "katia@audifono.es",
+            False,
+        )
+
+        assert result == {
+            "categoria": "finanzas",
+            "razon_clasificacion": "Trata sobre un recordatorio de pago",
+        }
