@@ -299,7 +299,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
         raise RuntimeError("No mailbox configs found in config/ directory")
 
     # Use the shortest poll interval across all configs
-    poll_interval = min(c.get("poll_interval_seconds", 120) for c in configs)
+    poll_interval = min(c.get("poll_interval_seconds", 600) for c in configs)
 
     # Build one GmailClient per mailbox (each has its own refresh token)
     clients: list[tuple[GmailClient, dict]] = []

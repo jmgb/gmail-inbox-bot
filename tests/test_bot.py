@@ -45,7 +45,7 @@ def mailbox_config():
         "routing": {"spam": {"action": "silent"}},
         "templates": {},
         "max_emails_per_poll": 50,
-        "poll_interval_seconds": 120,
+        "poll_interval_seconds": 600,
     }
 
 

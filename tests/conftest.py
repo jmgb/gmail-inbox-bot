@@ -11,7 +11,7 @@ MOCK_CONFIG = {
         "prompt_file": "gmail_inbox_bot/prompts/clasificador_inbox.txt",
     },
     "max_emails_per_poll": 50,
-    "poll_interval_seconds": 120,
+    "poll_interval_seconds": 600,
     "routing": {
         "reenvio_ingles": {
             "action": "forward",

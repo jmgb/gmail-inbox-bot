@@ -9,7 +9,7 @@ classifier:
   # model: gpt-5.2-2025-12-11  # descomentar para override del modelo
 
 max_emails_per_poll: 50
-poll_interval_seconds: 60
+poll_interval_seconds: 600
 
 # --- Pre-filtros: antes de clasificar, por remitente/asunto ---
 pre_filters:
