@@ -159,6 +159,12 @@ class GmailClient:
         """Convert a list of label names to Gmail label IDs."""
         return [self._ensure_label(n) for n in names]
 
+    def _id_to_name_map(self) -> dict[str, str]:
+        """Return a reverse mapping (label-id → label-name) from the cache."""
+        if not self._label_cache:
+            self._load_labels()
+        return {v: k for k, v in self._label_cache.items()}
+
     # ------------------------------------------------------------------
     # Read — Phase 2
     # ------------------------------------------------------------------
@@ -185,7 +191,7 @@ class GmailClient:
                 f"/messages/{stub['id']}",
                 params={"format": "full"},
             )
-            normalised = _normalise_message(detail.json())
+            normalised = _normalise_message(detail.json(), self._id_to_name_map())
             results.append(normalised)
         return results
 
@@ -377,7 +383,7 @@ class GmailClient:
             f"/messages/{message_id}",
             params={"format": "full"},
         )
-        original = _normalise_message(resp.json())
+        original = _normalise_message(resp.json(), self._id_to_name_map())
         original_body = original["body"]["content"]
 
         from_addr = self.send_as or user_email
@@ -470,13 +476,17 @@ def _has_attachments(payload: dict) -> bool:
     return False
 
 
-def _normalise_message(raw: dict) -> dict:
+def _normalise_message(raw: dict, id_to_name: dict[str, str] | None = None) -> dict:
     """Convert a Gmail API message (format=full) to the internal payload format."""
     payload = raw.get("payload", {})
     headers = payload.get("headers", [])
 
     from_parsed = _parse_address(_get_header(headers, "From"))
     label_ids = raw.get("labelIds", [])
+    # Translate custom label IDs to human-readable names so that
+    # ``already_processed()`` can match them against PROCESSED_TAGS.
+    if id_to_name:
+        label_ids = [id_to_name.get(lid, lid) for lid in label_ids]
 
     # Convert internalDate (ms epoch) to ISO-8601
     internal_date_ms = raw.get("internalDate", "0")

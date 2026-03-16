@@ -559,6 +559,23 @@ class TestCompatWithActions:
         msg["categories"] = ["RESPONDIDO IA"]
         assert already_processed(msg) is True
 
+    def test_label_ids_converted_to_names_for_already_processed(self):
+        """Label IDs like 'Label_123' must be converted to names so that
+        already_processed() can match them against PROCESSED_TAGS."""
+        from gmail_inbox_bot.actions import already_processed
+
+        id_to_name = {"Label_abc123": "REVISAR IA"}
+        raw = {**RAW_GMAIL_MESSAGE, "labelIds": ["INBOX", "UNREAD", "Label_abc123"]}
+        msg = _normalise_message(raw, id_to_name=id_to_name)
+        assert "REVISAR IA" in msg["labels"]
+        assert already_processed(msg) is True
+
+    def test_label_ids_without_mapping_stay_as_ids(self):
+        """Without a reverse mapping, label IDs are kept as-is (backward compat)."""
+        raw = {**RAW_GMAIL_MESSAGE, "labelIds": ["INBOX", "Label_xyz"]}
+        msg = _normalise_message(raw)
+        assert "Label_xyz" in msg["labels"]
+
     def test_normalised_msg_has_all_fields_for_execute(self):
         """Ensure the normalised payload has every key that execute() reads."""
         msg = _normalise_message(RAW_GMAIL_MESSAGE)
