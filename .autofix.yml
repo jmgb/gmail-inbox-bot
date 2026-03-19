@@ -1,0 +1,32 @@
+repo: jmgb/gmail-inbox-bot
+base_branch: main
+fix_mode: semi-auto
+publication_model: claude_commit_push
+runner_mode: host_vps
+
+git:
+  branch_prefix: autofix/sentry-
+  author_name: Claude Code Autofix
+  author_email: claude-code-autofix@users.noreply.github.com
+  commit_title_prefix: "fix: [Sentry]"
+
+validation:
+  required_before_publish:
+    - read_claude_md
+    - read_autofix_contract
+    - run_linters_on_modified_code
+    - run_related_tests
+    - do_not_publish_if_validations_fail
+
+delivery:
+  create_pr: true
+  auto_merge: false
+  push_direct_to_main: false
+  merge_authentication: github_app_or_pat
+
+guardrails:
+  never_push_to_main_unless_full_auto: true
+  never_use_vps_as_workspace: true
+  never_edit_live_production_checkout: true
+  keep_changes_minimal_and_incident_scoped: true
+  require_non_github_token_for_merge_that_triggers_deploy: true
