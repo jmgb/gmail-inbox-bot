@@ -179,7 +179,8 @@ class TestClassifyEmail:
     def test_reason_prefix_is_removed(self):
         client = MagicMock()
         client.responses.create.return_value = _mock_responses_response(
-            '{"categoria":"finanzas","razon_clasificacion":"razon_clasificacion: Trata sobre un recordatorio de pago"}'
+            '{"categoria":"finanzas","razon_clasificacion":'
+            '"razon_clasificacion: Trata sobre un recordatorio de pago"}'
         )
 
         result = classify_email(
