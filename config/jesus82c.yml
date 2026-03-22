@@ -23,6 +23,26 @@ pre_filters:
     folder: Trading
     sheets_tab: Resumen
 
+  - name: Interactive Brokers (silenciar)
+    match:
+      sender_contains: interactivebrokers.com
+    action: silent
+
+  - name: IB Prospectus Docs (silenciar)
+    match:
+      sender_contains: prospectusdocs.com
+    action: silent
+
+  - name: Banco Santander (silenciar)
+    match:
+      sender_contains: santander
+    action: silent
+
+  - name: Nubank (silenciar)
+    match:
+      sender_contains: nubank.com.br
+    action: silent
+
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:
