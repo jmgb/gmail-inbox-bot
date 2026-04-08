@@ -34,7 +34,7 @@ wait_for_health() {
   attempts=15
   delay=6
   for i in $(seq 1 "$attempts"); do
-    health_status="$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "none")"
+    health_status="$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null | tr -d '[:space:]' || echo "none")"
 
     if [ "$health_status" = "healthy" ]; then
       echo "Container healthy (Docker healthcheck)"
