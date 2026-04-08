@@ -34,11 +34,22 @@ wait_for_health() {
   attempts=15
   delay=6
   for i in $(seq 1 "$attempts"); do
-    health_status="$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")"
+    health_status="$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "none")"
+
     if [ "$health_status" = "healthy" ]; then
-      echo "Container healthy"
+      echo "Container healthy (Docker healthcheck)"
       return 0
     fi
+
+    # Fallback: if no Docker healthcheck configured, use HTTP health URL
+    if [ "$health_status" = "none" ] || [ "$health_status" = "" ]; then
+      container_running="$(docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo "false")"
+      if [ "$container_running" = "true" ] && curl -sf --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
+        echo "Container healthy (HTTP check)"
+        return 0
+      fi
+    fi
+
     if [ "$i" -eq "$attempts" ]; then
       echo "Health check failed after ${attempts} attempts"
       docker logs "$CONTAINER_NAME" --tail 30 || true
