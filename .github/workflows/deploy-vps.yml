@@ -4,6 +4,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-gmail-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -25,18 +33,66 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
-  deploy:
+  build-image:
+    name: Build immutable image (GHCR)
     needs: quality
     runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.digest.outputs.image_ref }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+
     steps:
-      - uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v6
+
+      - name: Resolve image coordinates
+        id: meta
+        run: |
+          OWNER_LOWER="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER_LOWER}/gmail-inbox-bot"
+          IMAGE_TAG="${IMAGE}:sha-${GITHUB_SHA}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:main
+            ${{ steps.meta.outputs.image_tag }}
+
+      - id: digest
+        run: |
+          echo "image_ref=${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 5m
           script: |
+            set -euo pipefail
             cd /home/ubuntu/services/gmail-inbox-bot
             git pull origin main --ff-only
-            docker compose -f docker-compose.production.yml up -d --build
-            sleep 5
-            docker ps --filter name=gmail-inbox-bot --format '{{.Status}}' | grep -q 'Up' || exit 1
+
+            DEPLOY_IMAGE_REF='${{ needs.build-image.outputs.image_ref }}' \
+            DEPLOY_ALLOW_FALLBACK='true' \
+            GHCR_USERNAME='${{ secrets.GHCR_USERNAME }}' \
+            GHCR_TOKEN='${{ secrets.GHCR_TOKEN }}' \
+            ./scripts/vps_deploy.sh
