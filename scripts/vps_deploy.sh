@@ -120,4 +120,11 @@ else
 fi
 echo
 print_runtime_status
+
+
+# ── Post-deploy cleanup ───────────────────────────────────────────────────────
+docker image prune -f
+docker builder prune -f --keep-storage=500mb
+echo "Disco: $(df -h / | tail -1 | tr -s ' ' | cut -d' ' -f4) libres"
+
 print_header "Deployment completado"
