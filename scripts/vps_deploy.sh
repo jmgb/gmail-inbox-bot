@@ -18,7 +18,7 @@ fi
 PROJECT_DIR="/home/ubuntu/services/gmail-inbox-bot"
 COMPOSE_FILE="docker-compose.production.yml"
 CONTAINER_NAME="gmail-inbox-bot"
-HEALTH_URL="http://localhost:8007/health"
+HEALTH_URL=""  # No HTTP health endpoint — bot uses polling, not a web server
 SERVICE_NAME="gmail-inbox-bot"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 COMPOSE_IMAGE_DASHED="${PROJECT_NAME}-${SERVICE_NAME}:latest"
@@ -41,12 +41,16 @@ wait_for_health() {
       return 0
     fi
 
-    # Fallback: if no Docker healthcheck configured, use HTTP health URL
+    # Fallback: if no Docker healthcheck configured, check container is running
     if [ "$health_status" = "none" ] || [ "$health_status" = "" ]; then
       container_running="$(docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo "false")"
-      if [ "$container_running" = "true" ] && curl -sf --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
-        echo "Container healthy (HTTP check)"
-        return 0
+      if [ "$container_running" = "true" ]; then
+        if [ -n "$HEALTH_URL" ]; then
+          curl -sf --connect-timeout 2 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1 && echo "Container healthy (HTTP check)" && return 0
+        else
+          echo "Container running (no health endpoint)"
+          return 0
+        fi
       fi
     fi
 
@@ -108,8 +112,12 @@ else
   deploy_legacy_build
 fi
 
-print_header "Verificando endpoint /health"
-curl -sf "$HEALTH_URL" > /dev/null && echo "Health OK" || echo "Health no responde; revisar manualmente"
+print_header "Verificando estado final"
+if [ -n "$HEALTH_URL" ]; then
+  curl -sf "$HEALTH_URL" > /dev/null && echo "Health OK" || echo "Health no responde; revisar manualmente"
+else
+  docker ps --filter "name=$CONTAINER_NAME" --format '{{.Status}}' | grep -q 'Up' && echo "Container running" || echo "Container not running"
+fi
 echo
 print_runtime_status
 print_header "Deployment completado"
