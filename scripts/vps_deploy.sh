@@ -123,6 +123,11 @@ print_runtime_status
 
 
 # ── Post-deploy cleanup ───────────────────────────────────────────────────────
+# Remove old untagged images from ghcr.io (previous deploys leave <none> tags)
+docker images --filter "reference=ghcr.io/jmgb/*" --format '{{.ID}} {{.Tag}}' \
+  | grep '<none>' \
+  | awk '{print $1}' \
+  | xargs -r docker rmi -f 2>/dev/null || true
 docker image prune -f
 docker builder prune -f --keep-storage=500mb
 echo "Disco: $(df -h / | tail -1 | tr -s ' ' | cut -d' ' -f4) libres"
