@@ -8,7 +8,7 @@ import time
 from openai import OpenAI
 
 from .actions import already_processed, execute
-from .classifier import DEFAULT_MODEL, GPT_OSS_120B, classify_email, load_prompt
+from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
 from .logger import setup_logger
@@ -25,10 +25,6 @@ from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_MODELS = {
-    GPT_OSS_120B,
-    "openai/gpt-oss-20b",
-}
 
 
 def _build_gmail_client(
@@ -76,14 +72,11 @@ def _build_llm_clients(env: dict[str, str]) -> dict[str, OpenAI | None]:
     return clients
 
 
-def _select_llm_client(client_or_clients, model: str):
-    if not isinstance(client_or_clients, dict):
-        return client_or_clients
-
-    if model in GROQ_MODELS:
-        return client_or_clients.get("groq")
-
-    return client_or_clients.get("openai")
+def _has_llm_client(client_or_clients) -> bool:
+    """True si hay al menos un cliente LLM disponible (single o dict)."""
+    if isinstance(client_or_clients, dict):
+        return any(client_or_clients.values())
+    return client_or_clients is not None
 
 
 def _enrich_forwarded(email_msg: dict, config: dict) -> None:
@@ -139,9 +132,8 @@ def _process_email(
 
     # 4. Classify
     model = config.get("classifier", {}).get("model", "") or DEFAULT_MODEL
-    llm_client = _select_llm_client(openai_client, model)
-    if not llm_client:
-        log.warning("[%s] No OpenAI client — tagging ERROR IA", msg_id)
+    if not _has_llm_client(openai_client):
+        log.warning("[%s] No LLM client available — tagging ERROR IA", msg_id)
         gmail.update_email(
             config["email"],
             msg_id,
@@ -186,7 +178,7 @@ def _process_email(
 
     system_prompt = load_prompt(prompt_file)
     classification = classify_email(
-        llm_client,
+        openai_client,
         system_prompt,
         subject,
         body_text,
@@ -229,7 +221,7 @@ def _process_email(
         email_msg,
         classification,
         dry_run=dry_run,
-        openai_client=llm_client,
+        openai_client=openai_client,
         body_text=body_text,
     )
     log.info(
@@ -248,7 +240,7 @@ def _process_email(
         category=categoria,
         action=result,
         msg_id=msg_id,
-        model=model,
+        model=classification.get("model_used", model),
         draft_mode=gmail.draft_mode,
         classification_reason=classification.get("razon_clasificacion"),
         sender=sender,

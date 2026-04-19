@@ -220,7 +220,7 @@ class TestProcessEmail:
 
     @patch("gmail_inbox_bot.bot.classify_email")
     @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-    def test_groq_model_uses_groq_client(self, _mock_load, mock_classify, mock_gmail, config):
+    def test_classifier_receives_client_dict(self, _mock_load, mock_classify, mock_gmail, config):
         config["classifier"]["model"] = GPT_OSS_120B
         llm_clients = {"openai": MagicMock(name="openai"), "groq": MagicMock(name="groq")}
         mock_classify.return_value = {
@@ -230,7 +230,8 @@ class TestProcessEmail:
 
         _process_email(mock_gmail, llm_clients, config, _make_email())
 
-        assert mock_classify.call_args.args[0] is llm_clients["groq"]
+        # Routing ahora vive en classifier._select_client — bot pasa el dict tal cual.
+        assert mock_classify.call_args.args[0] is llm_clients
 
 
 # ------------------------------------------------------------------

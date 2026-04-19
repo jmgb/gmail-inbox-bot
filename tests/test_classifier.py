@@ -3,7 +3,13 @@
 import json
 from unittest.mock import MagicMock
 
-from gmail_inbox_bot.classifier import DEFAULT_MODEL, classify_email, generate_response
+from gmail_inbox_bot.classifier import (
+    DEFAULT_MODEL,
+    GPT_5_MINI,
+    GPT_OSS_120B,
+    classify_email,
+    generate_response,
+)
 
 
 def _mock_responses_response(content: str) -> MagicMock:
@@ -34,9 +40,10 @@ class TestClassifyEmail:
             False,
         )
 
-        assert result == expected
         assert result["categoria"] == "coste_programa"
         assert result["idioma"] == "español"
+        assert result["razon_clasificacion"] == expected["razon_clasificacion"]
+        assert result["model_used"] == DEFAULT_MODEL
 
     def test_invalid_json_returns_none(self):
         client = MagicMock()
@@ -156,7 +163,8 @@ class TestClassifyEmail:
             True,
         )
 
-        assert result == {"categoria": "finanzas", "razon_clasificacion": ""}
+        assert result["categoria"] == "finanzas"
+        assert result["razon_clasificacion"] == ""
 
     def test_placeholder_reason_field_name_is_sanitized(self):
         client = MagicMock()
@@ -174,7 +182,8 @@ class TestClassifyEmail:
             False,
         )
 
-        assert result == {"categoria": "personal", "razon_clasificacion": ""}
+        assert result["categoria"] == "personal"
+        assert result["razon_clasificacion"] == ""
 
     def test_reason_prefix_is_removed(self):
         client = MagicMock()
@@ -193,10 +202,8 @@ class TestClassifyEmail:
             False,
         )
 
-        assert result == {
-            "categoria": "finanzas",
-            "razon_clasificacion": "Trata sobre un recordatorio de pago",
-        }
+        assert result["categoria"] == "finanzas"
+        assert result["razon_clasificacion"] == "Trata sobre un recordatorio de pago"
 
     def test_usage_and_cost_are_included_in_classification_result(self):
         expected = {
@@ -234,6 +241,110 @@ class TestClassifyEmail:
         }
 
 
+class TestProviderRoutingAndFallback:
+    def test_gpt_oss_model_is_routed_to_groq_client(self):
+        response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
+        groq_client = MagicMock(name="groq")
+        groq_client.responses.create.return_value = response
+        openai_client = MagicMock(name="openai")
+
+        result = classify_email(
+            {"openai": openai_client, "groq": groq_client},
+            "system prompt",
+            "s",
+            "b",
+            "n",
+            "e@e.com",
+            False,
+            model=GPT_OSS_120B,
+        )
+
+        groq_client.responses.create.assert_called_once()
+        openai_client.responses.create.assert_not_called()
+        assert result["model_used"] == GPT_OSS_120B
+
+    def test_non_gpt_oss_model_is_routed_to_openai_client(self):
+        response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
+        openai_client = MagicMock(name="openai")
+        openai_client.responses.create.return_value = response
+        groq_client = MagicMock(name="groq")
+
+        classify_email(
+            {"openai": openai_client, "groq": groq_client},
+            "system prompt",
+            "s",
+            "b",
+            "n",
+            "e@e.com",
+            False,
+            model=GPT_5_MINI,
+        )
+
+        openai_client.responses.create.assert_called_once()
+        groq_client.responses.create.assert_not_called()
+
+    def test_groq_failure_falls_back_to_openai(self):
+        ok_response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
+        groq_client = MagicMock(name="groq")
+        groq_client.responses.create.side_effect = Exception("Groq 429 quota")
+        openai_client = MagicMock(name="openai")
+        openai_client.responses.create.return_value = ok_response
+
+        result = classify_email(
+            {"openai": openai_client, "groq": groq_client},
+            "system prompt",
+            "s",
+            "b",
+            "n",
+            "e@e.com",
+            False,
+            model=GPT_OSS_120B,
+        )
+
+        assert groq_client.responses.create.call_count == 1
+        assert openai_client.responses.create.call_count == 1
+        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_MINI
+        assert result["model_used"] == GPT_5_MINI
+
+    def test_both_providers_fail_returns_none(self):
+        groq_client = MagicMock(name="groq")
+        groq_client.responses.create.side_effect = Exception("Groq down")
+        openai_client = MagicMock(name="openai")
+        openai_client.responses.create.side_effect = Exception("OpenAI down")
+
+        result = classify_email(
+            {"openai": openai_client, "groq": groq_client},
+            "system prompt",
+            "s",
+            "b",
+            "n",
+            "e@e.com",
+            False,
+            model=GPT_OSS_120B,
+        )
+
+        assert result is None
+
+    def test_missing_groq_client_falls_back_to_openai(self):
+        ok_response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
+        openai_client = MagicMock(name="openai")
+        openai_client.responses.create.return_value = ok_response
+
+        result = classify_email(
+            {"openai": openai_client, "groq": None},
+            "system prompt",
+            "s",
+            "b",
+            "n",
+            "e@e.com",
+            False,
+            model=GPT_OSS_120B,
+        )
+
+        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_MINI
+        assert result["model_used"] == GPT_5_MINI
+
+
 class TestGenerateResponse:
     def test_usage_and_cost_are_returned_with_generated_text(self):
         response = _mock_responses_response("Respuesta generada")
@@ -251,6 +362,7 @@ class TestGenerateResponse:
 
         assert result == {
             "text": "Respuesta generada",
+            "model_used": DEFAULT_MODEL,
             "usage": {
                 "input_tokens": 1000,
                 "output_tokens": 250,
