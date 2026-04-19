@@ -34,6 +34,7 @@ def load_env() -> dict[str, str]:
         raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
     env["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
+    env["GROQ_API_KEY"] = os.environ.get("GROQ_API_KEY", "")
     env["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "INFO")
     env["ENVIRONMENT"] = os.environ.get("ENVIRONMENT", "development")
     return env

@@ -35,6 +35,7 @@ class TestLoadEnv:
         with patch.dict(os.environ, env_vars, clear=True):
             env = load_env()
             assert env["OPENAI_API_KEY"] == ""
+            assert env["GROQ_API_KEY"] == ""
             assert env["LOG_LEVEL"] == "INFO"
             assert env["ENVIRONMENT"] == "development"
 

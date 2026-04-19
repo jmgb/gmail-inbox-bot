@@ -52,6 +52,13 @@ def record_email(
     sender: str | None = None,
     subject: str | None = None,
     received_at: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    input_cost_usd: float | None = None,
+    output_cost_usd: float | None = None,
+    total_cost_usd: float | None = None,
+    llm_provider: str | None = None,
 ) -> None:
     """Registra un email procesado en email_metrics.
 
@@ -67,6 +74,13 @@ def record_email(
         sender                Dirección de email del remitente
         subject               Asunto del email
         received_at           Fecha de recepción del email
+        input_tokens          Tokens de entrada consumidos por el LLM
+        output_tokens         Tokens de salida consumidos por el LLM
+        total_tokens          Tokens totales consumidos por el LLM
+        input_cost_usd        Coste USD de tokens de entrada
+        output_cost_usd       Coste USD de tokens de salida
+        total_cost_usd        Coste USD total del procesamiento LLM
+        llm_provider          Proveedor del modelo
     """
     try:
         payload = {
@@ -89,6 +103,20 @@ def record_email(
             payload["subject"] = subject[:200]
         if received_at:
             payload["received_at"] = received_at
+        if input_tokens is not None:
+            payload["input_tokens"] = input_tokens
+        if output_tokens is not None:
+            payload["output_tokens"] = output_tokens
+        if total_tokens is not None:
+            payload["total_tokens"] = total_tokens
+        if input_cost_usd is not None:
+            payload["input_cost_usd"] = input_cost_usd
+        if output_cost_usd is not None:
+            payload["output_cost_usd"] = output_cost_usd
+        if total_cost_usd is not None:
+            payload["total_cost_usd"] = total_cost_usd
+        if llm_provider:
+            payload["llm_provider"] = llm_provider
 
         _supabase_upsert(payload)
         log.debug(

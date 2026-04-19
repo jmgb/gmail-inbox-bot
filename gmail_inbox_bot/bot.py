@@ -8,7 +8,7 @@ import time
 from openai import OpenAI
 
 from .actions import already_processed, execute
-from .classifier import DEFAULT_MODEL, classify_email, load_prompt
+from .classifier import DEFAULT_MODEL, GPT_OSS_120B, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
 from .logger import setup_logger
@@ -24,6 +24,11 @@ from .sheets import build_sheets_client
 from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_MODELS = {
+    GPT_OSS_120B,
+    "openai/gpt-oss-20b",
+}
 
 
 def _build_gmail_client(
@@ -53,12 +58,32 @@ def _build_gmail_client(
     )
 
 
-def _build_openai_client(env: dict[str, str]) -> OpenAI | None:
-    api_key = env.get("OPENAI_API_KEY")
-    if not api_key:
-        log.warning("OPENAI_API_KEY not set — classification will be skipped")
-        return None
-    return OpenAI(api_key=api_key)
+def _build_llm_clients(env: dict[str, str]) -> dict[str, OpenAI | None]:
+    clients: dict[str, OpenAI | None] = {"openai": None, "groq": None}
+
+    openai_api_key = env.get("OPENAI_API_KEY")
+    if openai_api_key:
+        clients["openai"] = OpenAI(api_key=openai_api_key)
+    else:
+        log.warning("OPENAI_API_KEY not set")
+
+    groq_api_key = env.get("GROQ_API_KEY")
+    if groq_api_key:
+        clients["groq"] = OpenAI(base_url=GROQ_BASE_URL, api_key=groq_api_key)
+    else:
+        log.warning("GROQ_API_KEY not set")
+
+    return clients
+
+
+def _select_llm_client(client_or_clients, model: str):
+    if not isinstance(client_or_clients, dict):
+        return client_or_clients
+
+    if model in GROQ_MODELS:
+        return client_or_clients.get("groq")
+
+    return client_or_clients.get("openai")
 
 
 def _enrich_forwarded(email_msg: dict, config: dict) -> None:
@@ -113,7 +138,9 @@ def _process_email(
     _enrich_forwarded(email_msg, config)
 
     # 4. Classify
-    if not openai_client:
+    model = config.get("classifier", {}).get("model", "") or DEFAULT_MODEL
+    llm_client = _select_llm_client(openai_client, model)
+    if not llm_client:
         log.warning("[%s] No OpenAI client — tagging ERROR IA", msg_id)
         gmail.update_email(
             config["email"],
@@ -138,7 +165,6 @@ def _process_email(
     has_attachments = email_msg.get("hasAttachments", False)
 
     prompt_file = config.get("classifier", {}).get("prompt_file", "")
-    model = config.get("classifier", {}).get("model", "")
     if not prompt_file:
         log.error("[%s] No classifier.prompt_file in config", msg_id)
         gmail.update_email(
@@ -159,16 +185,15 @@ def _process_email(
         return "error — no prompt_file configured, tagged ERROR IA"
 
     system_prompt = load_prompt(prompt_file)
-    classify_kwargs: dict = {"model": model} if model else {}
     classification = classify_email(
-        openai_client,
+        llm_client,
         system_prompt,
         subject,
         body_text,
         sender_name,
         sender,
         has_attachments,
-        **classify_kwargs,
+        model=model,
     )
 
     if not classification:
@@ -179,7 +204,7 @@ def _process_email(
             category="error_clasificacion",
             action="tag:ERROR IA",
             msg_id=msg_id,
-            model=model or DEFAULT_MODEL,
+            model=model,
             error=True,
             sender=sender,
             subject=subject,
@@ -204,7 +229,7 @@ def _process_email(
         email_msg,
         classification,
         dry_run=dry_run,
-        openai_client=openai_client,
+        openai_client=llm_client,
         body_text=body_text,
     )
     log.info(
@@ -216,16 +241,25 @@ def _process_email(
     )
 
     # 7. Record metric
+    usage = classification.get("usage") or {}
+    cost = classification.get("cost") or {}
     record_email(
         mailbox=mailbox_name,
         category=categoria,
         action=result,
         msg_id=msg_id,
-        model=model or DEFAULT_MODEL,
+        model=model,
         draft_mode=gmail.draft_mode,
         classification_reason=classification.get("razon_clasificacion"),
         sender=sender,
         subject=subject,
+        input_tokens=usage.get("input_tokens"),
+        output_tokens=usage.get("output_tokens"),
+        total_tokens=usage.get("total_tokens"),
+        input_cost_usd=cost.get("input_cost_usd"),
+        output_cost_usd=cost.get("output_cost_usd"),
+        total_cost_usd=cost.get("total_cost_usd"),
+        llm_provider=cost.get("provider"),
     )
 
     return result
@@ -292,7 +326,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     """
     env = load_env()
     setup_telegram_logging(chat_id=os.environ.get("TELEGRAM_CHAT_ID"))
-    openai_client = _build_openai_client(env)
+    openai_client = _build_llm_clients(env)
     configs = load_mailbox_configs()
 
     if not configs:

@@ -3,7 +3,7 @@
 import json
 from unittest.mock import MagicMock
 
-from gmail_inbox_bot.classifier import DEFAULT_MODEL, classify_email
+from gmail_inbox_bot.classifier import DEFAULT_MODEL, classify_email, generate_response
 
 
 def _mock_responses_response(content: str) -> MagicMock:
@@ -196,4 +196,70 @@ class TestClassifyEmail:
         assert result == {
             "categoria": "finanzas",
             "razon_clasificacion": "Trata sobre un recordatorio de pago",
+        }
+
+    def test_usage_and_cost_are_included_in_classification_result(self):
+        expected = {
+            "idioma": "español",
+            "categoria": "otros",
+            "razon_clasificacion": "Clasificacion general",
+            "ultimo_email": "Texto",
+        }
+        response = _mock_responses_response(json.dumps(expected))
+        response.usage = MagicMock(input_tokens=1200, output_tokens=300)
+        client = MagicMock()
+        client.responses.create.return_value = response
+
+        result = classify_email(
+            client,
+            "system prompt",
+            "Test",
+            "body",
+            "Juan",
+            "juan@test.com",
+            False,
+            model=DEFAULT_MODEL,
+        )
+
+        assert result["usage"] == {
+            "input_tokens": 1200,
+            "output_tokens": 300,
+            "total_tokens": 1500,
+        }
+        assert result["cost"] == {
+            "input_cost_usd": 0.00018,
+            "output_cost_usd": 0.00018,
+            "total_cost_usd": 0.00036,
+            "provider": "Groq",
+        }
+
+
+class TestGenerateResponse:
+    def test_usage_and_cost_are_returned_with_generated_text(self):
+        response = _mock_responses_response("Respuesta generada")
+        response.usage = MagicMock(input_tokens=1000, output_tokens=250)
+        client = MagicMock()
+        client.responses.create.return_value = response
+
+        result = generate_response(
+            client,
+            "system prompt",
+            "body",
+            "Juan",
+            model=DEFAULT_MODEL,
+        )
+
+        assert result == {
+            "text": "Respuesta generada",
+            "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 250,
+                "total_tokens": 1250,
+            },
+            "cost": {
+                "input_cost_usd": 0.00015,
+                "output_cost_usd": 0.00015,
+                "total_cost_usd": 0.0003,
+                "provider": "Groq",
+            },
         }

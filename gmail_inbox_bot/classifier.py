@@ -5,14 +5,17 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from .llm_costs import build_cost_metadata
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.classifier", "logs/app.log")
 
 # Default model — overridden by YAML config per mailbox
-GPT_5 = "gpt-5.2-2025-12-11"
-GPT_5_4 = "gpt-5.4-2026-03-05"
-DEFAULT_MODEL = GPT_5
+GPT_5 = "gpt-5.4-2026-03-05"
+GPT_5_MINI = "gpt-5.4-mini-2026-03-17"
+GPT_5_NANO = "gpt-5.4-nano-2026-03-17"
+GPT_OSS_120B = "openai/gpt-oss-120b"
+DEFAULT_MODEL = GPT_OSS_120B
 
 
 def load_prompt(prompt_file: str) -> str:
@@ -75,6 +78,9 @@ def classify_email(
         idioma = result.get("idioma", "")
         razon = _sanitize_reason(result.get("razon_clasificacion", ""))
         result["razon_clasificacion"] = razon
+        metadata = build_cost_metadata(model, resp)
+        if metadata:
+            result.update(metadata)
         log.info(
             "📋 Clasificación: categoria=%s | idioma=%s | razón=%s",
             categoria,
@@ -99,7 +105,7 @@ def generate_response(
     email_text: str,
     sender_name: str,
     model: str = DEFAULT_MODEL,
-) -> str | None:
+) -> dict | None:
     """Generate a free-text reply using OpenAI (for dynamic_reply action)."""
     user_content = f"Remitente: {sender_name}\n\nEmail:\n{email_text}"
     try:
@@ -114,13 +120,17 @@ def generate_response(
             ],
         )
         text = resp.output_text.strip()
+        result = {"text": text}
+        metadata = build_cost_metadata(model, resp)
+        if metadata:
+            result.update(metadata)
         log.info(
             "✍️ Respuesta dinámica generada (%d chars): %.200s%s",
             len(text),
             text,
             "..." if len(text) > 200 else "",
         )
-        return text
+        return result
     except Exception as exc:
         log.warning(
             "Response generation failed (%s): %s",

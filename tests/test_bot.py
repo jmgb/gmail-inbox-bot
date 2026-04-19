@@ -6,10 +6,12 @@ import pytest
 
 from gmail_inbox_bot.bot import (
     _build_gmail_client,
+    _build_llm_clients,
     _enrich_forwarded,
     _process_email,
     process_mailbox,
 )
+from gmail_inbox_bot.classifier import GPT_OSS_120B
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -22,6 +24,7 @@ def env():
         "GOOGLE_CLIENT_ID": "id",
         "GOOGLE_CLIENT_SECRET": "secret",
         "OPENAI_API_KEY": "sk-test",
+        "GROQ_API_KEY": "gsk-test",
         "LOG_LEVEL": "INFO",
         "ENVIRONMENT": "test",
     }
@@ -106,6 +109,21 @@ class TestBuildGmailClient:
             mailbox_config["refresh_token_env"] = "NONEXISTENT_VAR"
             with pytest.raises(RuntimeError, match="not found or empty"):
                 _build_gmail_client(env, mailbox_config)
+
+
+class TestBuildLlmClients:
+    @patch("gmail_inbox_bot.bot.OpenAI")
+    def test_builds_openai_and_groq_clients(self, mock_openai, env):
+        _build_llm_clients(env)
+
+        assert mock_openai.call_count == 2
+        first_call = mock_openai.call_args_list[0]
+        second_call = mock_openai.call_args_list[1]
+        assert first_call.kwargs == {"api_key": "sk-test"}
+        assert second_call.kwargs == {
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key": "gsk-test",
+        }
 
 
 # ------------------------------------------------------------------
@@ -199,6 +217,20 @@ class TestProcessEmail:
         result = _process_email(mock_gmail, openai_client, config, msg)
         assert "replied" in result
         mock_execute.assert_called_once()
+
+    @patch("gmail_inbox_bot.bot.classify_email")
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_groq_model_uses_groq_client(self, _mock_load, mock_classify, mock_gmail, config):
+        config["classifier"]["model"] = GPT_OSS_120B
+        llm_clients = {"openai": MagicMock(name="openai"), "groq": MagicMock(name="groq")}
+        mock_classify.return_value = {
+            "categoria": "otros",
+            "razon_clasificacion": "",
+        }
+
+        _process_email(mock_gmail, llm_clients, config, _make_email())
+
+        assert mock_classify.call_args.args[0] is llm_clients["groq"]
 
 
 # ------------------------------------------------------------------

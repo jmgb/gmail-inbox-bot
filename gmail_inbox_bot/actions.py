@@ -337,11 +337,11 @@ def _handle_dynamic_reply(
         sender_name = original_sender.get("name", "")
     else:
         sender_name = email_msg.get("from", {}).get("emailAddress", {}).get("name", "")
-    response_text = generate_response(
+    response_data = generate_response(
         openai_client, system_prompt, body_text, sender_name, model=model
     )
 
-    if not response_text:
+    if not response_data:
         _subj = email_msg.get("subject", "?")[:80]
         _sender = email_msg.get("from", {}).get("emailAddress", {}).get("address", "?")
         _received = email_msg.get("receivedDateTime", "?")
@@ -354,6 +354,12 @@ def _handle_dynamic_reply(
         )
         graph.update_email(user_email, msg_id, is_read=False, add_categories=[TAG_ERROR])
         return "dynamic_reply failed, tagged ERROR IA"
+
+    response_text = response_data["text"]
+    if "usage" in response_data:
+        classification["usage"] = response_data["usage"]
+    if "cost" in response_data:
+        classification["cost"] = response_data["cost"]
 
     signature = _load_signature(config)
     html_body = _plain_to_html(response_text) + signature
