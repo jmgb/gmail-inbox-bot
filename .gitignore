@@ -31,3 +31,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Symlink a doc personal fuera del repo
+SUPABASE_ACCOUNTS.md

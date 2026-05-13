@@ -4,7 +4,7 @@ import html as html_lib
 import re
 
 from .actions import TAG_PENDING_MANAGE
-from .ib_trades import notify_trade, parse_trade, record_trade
+from .ib_trades import notify_trade, parse_trade
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.mail_processing", "logs/app.log")
@@ -96,9 +96,6 @@ def apply_pre_filters(
             parent_folder = config.get("parent_folder")
             if trade:
                 notify_trade(trade, user_email)
-                sheets_client = config.get("_sheets_client")
-                sheets_tab = pre_filter.get("sheets_tab", "Sheet1")
-                record_trade(trade, sheets_client, sheet=sheets_tab)
                 log.info(
                     "[%s] IB trade: %s %s %s @ %.4f (%s)",
                     msg_id,

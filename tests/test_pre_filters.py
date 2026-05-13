@@ -1,6 +1,6 @@
 """Tests for pre-filter logic in bot.py."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from gmail_inbox_bot.mail_processing import apply_pre_filters
 
@@ -286,13 +286,18 @@ class TestApplyPreFilters:
     # ---- ib_trade action ----
 
     @patch("gmail_inbox_bot.mail_processing.notify_trade")
-    def test_ib_trade_parses_and_notifies(self, mock_notify, graph, config, make_email):
+    def test_ib_trade_parses_and_notifies_without_sheets(
+        self, mock_notify, graph, config, make_email
+    ):
+        sheets_client = MagicMock()
+        config["_sheets_client"] = sheets_client
         config["pre_filters"] = [
             {
                 "name": "IB Trading",
                 "match": {"sender_contains": "tradingassistant@interactivebrokers.com"},
                 "action": "ib_trade",
                 "folder": "Trading",
+                "sheets_tab": "Resumen",
             }
         ]
         msg = make_email(
@@ -311,6 +316,9 @@ class TestApplyPreFilters:
         assert trade.quantity == 1511
         assert trade.ticker == "VEEA"
         assert trade.price == 0.5722
+        sheets_client.assert_not_called()
+        sheets_client.find_insert_row.assert_not_called()
+        sheets_client.insert_row_at.assert_not_called()
         graph.update_email.assert_called_once()
         graph.move_email.assert_called_once()
 
