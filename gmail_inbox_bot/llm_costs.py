@@ -39,7 +39,10 @@ MODEL_PRICING: dict[str, ModelPrice] = {
     "openai/gpt-oss-20b": {"input": 0.075, "output": 0.30, "provider": "Groq"},
     "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00, "provider": "Google"},
     "gemini-3-pro-preview": {"input": 2.00, "output": 12.00, "provider": "Google"},
-    "gemini-flash-latest": {"input": 0.30, "output": 2.50, "provider": "Google"},
+    "gemini-pro-latest": {"input": 2.00, "output": 12.00, "provider": "Google"},
+    "gemini-flash-latest": {"input": 1.50, "output": 9.00, "provider": "Google"},
+    "gemini-flash-lite-latest": {"input": 0.25, "output": 1.50, "provider": "Google"},
+    "gemini-3.5-flash": {"input": 1.50, "output": 9.00, "provider": "Google"},
     "gemini-3.1-flash-image-preview": {
         "input": 0.50,
         "output": 3.00,
@@ -79,6 +82,11 @@ MODEL_PRICING: dict[str, ModelPrice] = {
     "google/gemini-2.5-flash-image": {
         "input": 0.30,
         "output": 2.50,
+        "provider": "OpenRouter",
+    },
+    "google/gemini-3.5-flash": {
+        "input": 1.50,
+        "output": 9.00,
         "provider": "OpenRouter",
     },
     "deepseek/deepseek-chat-v3.1": {
