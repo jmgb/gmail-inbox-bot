@@ -39,6 +39,13 @@ pre_filters:
       sender_contains: nubank.com.br
     action: silent
 
+  - name: GitHub notifications (archivar)
+    match:
+      sender_contains: notifications@github.com
+    action: tag_and_move
+    tag: Notificaciones
+    folder: Notificaciones
+
 # --- Routing: qué hacer con cada categoría ---
 routing:
   personal:
