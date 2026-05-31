@@ -1,3 +1,5 @@
+name: gmail-inbox-bot
+
 services:
   gmail-inbox-bot:
     build: .
