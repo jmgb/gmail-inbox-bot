@@ -47,9 +47,8 @@ class TestNotifyImportantEmail:
 
 
 class TestNotifyCategories:
-    def test_contains_personal_and_finanzas(self):
-        assert "personal" in NOTIFY_CATEGORIES
-        assert "finanzas" in NOTIFY_CATEGORIES
-
-    def test_does_not_contain_spam(self):
-        assert "spam" not in NOTIFY_CATEGORIES
+    def test_notifications_disabled_by_default(self):
+        # Desactivado a propósito (commit 0df24b6): el usuario no quiere el
+        # resumen por Telegram de cada email importante. Si se reactiva, basta
+        # con añadir categorías a NOTIFY_CATEGORIES y actualizar este test.
+        assert NOTIFY_CATEGORIES == frozenset()
