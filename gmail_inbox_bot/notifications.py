@@ -30,5 +30,8 @@ def notify_important_email(
     enviar_mensaje_telegram("\n".join(lines), referencia="notify_important")
 
 
-# Categories that trigger a Telegram notification
-NOTIFY_CATEGORIES: frozenset[str] = frozenset({"personal", "finanzas"})
+# Categories that trigger a Telegram notification.
+# Desactivado: el usuario no quiere recibir el resumen por Telegram de cada email
+# importante. La infraestructura (notify_important_email) se mantiene por si se
+# reactiva en el futuro — basta con volver a añadir categorías a este frozenset.
+NOTIFY_CATEGORIES: frozenset[str] = frozenset()
