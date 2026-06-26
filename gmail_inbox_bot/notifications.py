@@ -30,6 +30,19 @@ def notify_important_email(
     enviar_mensaje_telegram("\n".join(lines), referencia="notify_important")
 
 
+def notify_reminder_failure(*, mailbox: str, detail: str) -> None:
+    """Alert via Telegram when the daily calendar-reminder job fails.
+
+    Lets the user find out the same day instead of silently missing reminders.
+    """
+    lines = [
+        "⚠️ <b>Fallo en recordatorios de Calendar</b>",
+        f"<b>Buzón:</b> {mailbox}",
+        f"<b>Detalle:</b> {detail}",
+    ]
+    enviar_mensaje_telegram("\n".join(lines), referencia="reminder_failure")
+
+
 # Categories that trigger a Telegram notification.
 # Desactivado: el usuario no quiere recibir el resumen por Telegram de cada email
 # importante. La infraestructura (notify_important_email) se mantiene por si se

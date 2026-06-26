@@ -1,11 +1,15 @@
-# Recordatorios de Google Calendar a las 9:00 — Diseño
+# Recordatorios de Google Calendar a las 09:16 — Diseño
 
 **Fecha**: 2026-06-26
-**Estado**: Aprobado, listo para plan de implementación
+**Estado**: Implementado y desplegado en producción (VPS, autodeploy desde `main`)
+
+> **Limitación conocida**: `CalendarClient` solo lee el calendario `primary` de cada cuenta. Las
+> reuniones en calendarios secundarios (compartidos, de equipo, etc.) no generan recordatorio.
 
 ## Objetivo
 
-Cada día a las **09:00 Europe/Madrid**, revisar Google Calendar de las cuentas configuradas,
+Cada día a las **09:16 Europe/Madrid** (hora "rota" deliberada, ver Diseño de credibilidad), revisar
+Google Calendar de las cuentas configuradas,
 identificar las reuniones de **hoy** con **1 o 2 invitados además del titular**, y enviar a cada
 invitado (que no haya rechazado) un email de recordatorio con plantilla fija. Se reutiliza el OAuth
 existente (ampliando el scope a Calendar) y el envío de email vía Gmail API.
@@ -18,7 +22,7 @@ existente (ampliando el scope a Calendar) y el envío de email vía Gmail API.
 | Cuentas | **Ambas**: `jesus82c@gmail.com` y `miguelgutierrezbarquin@gmail.com` |
 | Contenido del email | **Plantilla fija** (Jinja2), sin coste LLM |
 | Scheduling | **Scheduler interno** en el proceso del bot (segundo daemon thread en `app.py`) |
-| Ventana de "hoy" | A las 09:00 Madrid, todas las reuniones de hoy (00:00–23:59 Madrid), incluidas las de antes de las 9 |
+| Ventana de "hoy" | A las 09:16 Madrid, todas las reuniones de hoy (00:00–23:59 Madrid), incluidas las de antes de las 9:16 |
 | Exclusiones | Eventos rechazados por mí, eventos all-day, asistentes que rechazaron, eventos sin invitados externos |
 | Idempotencia | **Fichero de estado local** JSON en `logs/` (volumen docker persistente) |
 | Modo prueba | `--dry-run` y `--once` |
@@ -221,7 +225,7 @@ en `CLAUDE.md`), aprobada por el usuario para esta feature concreta.
 
 - Daemon thread arrancado en `app.py` startup (junto al de polling).
 - Despierta cada ~60 s. Calcula la hora actual en `Europe/Madrid` (vía `zoneinfo`, stdlib en 3.13).
-- Si la hora local ≥ `send_time` (09:00) **y** no se ha ejecutado hoy (según estado) → lanza
+- Si la hora local ≥ `send_time` (09:16) **y** no se ha ejecutado hoy (según estado) → lanza
   `run_once(dry_run=False)` para cada mailbox con `calendar_reminders.enabled`.
 - Tras ejecutar, marca el día como hecho en el estado.
 - Respetar `DISABLE_BOT`: si está activo, no arrancar ni polling ni scheduler de recordatorios.
@@ -245,7 +249,7 @@ Estructura:
         "mailbox": "jesus82c",
         "event_id": "<calendar_event_id>",
         "invitee": "person@example.com",
-        "sent_at": "2026-06-26T09:00:05+02:00"
+        "sent_at": "2026-06-26T09:16:05+02:00"
       }
     ]
   }
@@ -273,7 +277,7 @@ Estructura:
 ```yaml
 calendar_reminders:
   enabled: true
-  send_time: "09:00"
+  send_time: "09:16"
   timezone: Europe/Madrid
   max_attendees: 2          # invitados además del titular
 ```

@@ -192,6 +192,8 @@ calendario de cada cuenta y envía a los asistentes un recordatorio de las reuni
   **global entre cuentas** por `iCalUID` + invitado → cada persona recibe un único recordatorio por
   reunión. Si un envío falla, ese día no se marca completado y se reintenta en el siguiente tick.
 - **Credenciales**: reutiliza el OAuth de Gmail (mismo refresh token, ampliado con `calendar.readonly`).
+- **Limitación**: solo se lee el calendario **`primary`** de cada cuenta; las reuniones en calendarios
+  secundarios (compartidos/de equipo) no generan recordatorio.
 
 Configuración opt-in por mailbox:
 

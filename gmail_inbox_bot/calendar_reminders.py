@@ -32,6 +32,7 @@ from .calendar_client import CalendarClient
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
 from .logger import setup_logger
+from .notifications import notify_reminder_failure
 
 log = setup_logger("gmail_inbox_bot.calendar_reminders", "logs/app.log")
 
@@ -382,17 +383,24 @@ def run_once(
             )
             all_results[mailbox] = results
             sent = sum(1 for r in results if r["status"] == "sent")
-            had_error = any(r["status"] == "error" for r in results)
+            failed = [r["invitee"] for r in results if r["status"] == "error"]
             log.info("Calendar reminders for %s: %d sent", mailbox, sent)
+            if failed and not dry_run:
+                notify_reminder_failure(
+                    mailbox=mailbox,
+                    detail=f"{len(failed)} envío(s) fallido(s): {', '.join(failed)}",
+                )
             if not dry_run:
                 # Persist successful sends always (dedupe), but only mark the day
                 # complete when every recipient succeeded — otherwise the
                 # scheduler retries the failed ones on the next tick.
-                if not had_error:
+                if not failed:
                     state.mark_ran(mailbox, day)
                 persist_progress()
-        except Exception:
+        except Exception as exc:
             log.exception("Reminder job failed for mailbox %s", mailbox)
+            if not dry_run:
+                notify_reminder_failure(mailbox=mailbox, detail=f"{type(exc).__name__}: {exc}")
 
     return all_results
 

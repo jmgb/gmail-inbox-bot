@@ -14,7 +14,8 @@ uso personal o single-user.
 
 ## Cuentas Gmail conectadas
 
-OAuth2 configurado (proyecto GCP: `ai-setter-443613`, scope: `gmail.modify`, app publicada).
+OAuth2 configurado (proyecto GCP: `ai-setter-443613`, scopes: `gmail.modify` + `calendar.readonly`,
+app publicada). La Google Calendar API debe estar habilitada en el proyecto para los recordatorios.
 Tokens permanentes (no expiran). Para añadir más cuentas: `uv run python scripts/get_refresh_token.py`.
 
 | Cuenta | Variable refresh token |
@@ -45,7 +46,9 @@ El bot debe leer y escribir sobre el mismo sistema donde viven los emails.
 
 ### Scope inicial mínimo
 
-Usar `gmail.modify` salvo que exista una razón concreta para ampliar scopes.
+Usar `gmail.modify` como base. Ya se amplió con `calendar.readonly` para la feature de recordatorios
+de Google Calendar (ver `gmail_inbox_bot/calendar_reminders.py` y el README). No ampliar más scopes
+sin una razón concreta.
 
 ### Labels, no carpetas
 
@@ -122,6 +125,10 @@ el email con precisión. **No desalentar respuestas** — el footer es branding,
 - Se puede personalizar por mailbox con `signature_file: ruta/al/archivo.html` en el YAML.
 - Se puede desactivar con `signature_file: ""`.
 - Default: `templates/signature.html`.
+
+**Excepción — recordatorios de Calendar**: los emails de `calendar_reminders` **NO** llevan este
+footer. Deben parecer escritos a mano por el usuario (prosa natural, firma personal `sender_name`,
+sin mención a IA ni a aiship.co). No re-añadir el footer a esos emails. Ver `calendar_reminders.py`.
 
 ### Clasificación — mejora continua
 

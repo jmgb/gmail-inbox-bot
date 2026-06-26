@@ -516,6 +516,53 @@ class TestRunOnce:
         reloaded = ReminderState.load(path)
         assert reloaded.ran_today("jesus82c", DAY) is False
 
+    def test_notifies_on_mailbox_failure(self, tmp_path, monkeypatch):
+        import gmail_inbox_bot.calendar_reminders as cr
+
+        calls = []
+        monkeypatch.setattr(cr, "notify_reminder_failure", lambda **kw: calls.append(kw))
+        gmail = MagicMock()
+        cal = MagicMock()
+        cal.list_events_for_day.side_effect = RuntimeError("calendar down")
+
+        run_once(
+            clients=[(gmail, cal, CONFIG)], day=DAY, sent_at="t", state_path=tmp_path / "s.json"
+        )
+        assert calls and calls[0]["mailbox"] == "jesus82c"
+
+    def test_notifies_on_send_error(self, tmp_path, monkeypatch):
+        import gmail_inbox_bot.calendar_reminders as cr
+
+        calls = []
+        monkeypatch.setattr(cr, "notify_reminder_failure", lambda **kw: calls.append(kw))
+        gmail = MagicMock()
+        gmail.send_email.side_effect = RuntimeError("x")
+        cal = MagicMock()
+        cal.list_events_for_day.return_value = [_ev()]
+
+        run_once(
+            clients=[(gmail, cal, CONFIG)], day=DAY, sent_at="t", state_path=tmp_path / "s.json"
+        )
+        assert calls and calls[0]["mailbox"] == "jesus82c"
+
+    def test_no_failure_notification_on_dry_run(self, tmp_path, monkeypatch):
+        import gmail_inbox_bot.calendar_reminders as cr
+
+        calls = []
+        monkeypatch.setattr(cr, "notify_reminder_failure", lambda **kw: calls.append(kw))
+        gmail = MagicMock()
+        cal = MagicMock()
+        cal.list_events_for_day.side_effect = RuntimeError("down")
+
+        run_once(
+            clients=[(gmail, cal, CONFIG)],
+            day=DAY,
+            sent_at="t",
+            state_path=tmp_path / "s.json",
+            dry_run=True,
+        )
+        assert calls == []
+
     def test_persists_successful_send_before_later_recipient_error(self, tmp_path, monkeypatch):
         gmail = MagicMock()
         first = _ev(id="evt1", ical_uid="uid-evt1@google.com")
