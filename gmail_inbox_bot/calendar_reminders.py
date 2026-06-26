@@ -1,9 +1,19 @@
 """Calendar reminders — daily job that emails attendees of small meetings.
 
-At 09:00 Europe/Madrid each day, for every mailbox that opts in via the
-``calendar_reminders`` config block, read today's calendar events, keep the
-meetings with 1-2 human guests besides the owner, and send each guest a fixed
-template reminder. Reuses the Gmail OAuth credentials and the Gmail send path.
+Each morning at the mailbox's ``send_time`` (default 09:16 Europe/Madrid), for
+every mailbox that opts in via the ``calendar_reminders`` config block, read
+today's calendar events, keep the meetings with 1-2 human guests besides the
+owner, and send each guest a personal-looking reminder. Reuses the Gmail OAuth
+credentials and the Gmail send path.
+
+Credibility design: the message must read as if the owner hand-wrote it that
+morning, not as an automation. Two deliberate choices serve this:
+
+* The default ``send_time`` is an "odd" minute (09:16, not 09:00) so the arrival
+  time looks like someone sat down to write at a random moment, not a system
+  firing on the hour.
+* The body is natural prose with a personal sign-off and **no** marketing footer
+  (see ``render_reminder``).
 """
 
 from __future__ import annotations
@@ -18,7 +28,6 @@ from zoneinfo import ZoneInfo
 
 from jinja2 import Template
 
-from .actions import _load_signature
 from .calendar_client import CalendarClient
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
@@ -31,21 +40,6 @@ _TEMPLATE_FILE = _PROJECT_ROOT / "templates" / "calendar_reminder.html"
 STATE_PATH = _PROJECT_ROOT / "logs" / "calendar_reminders_state.json"
 MADRID = ZoneInfo("Europe/Madrid")
 _template_cache: dict[str, Template] = {}
-
-_SPANISH_MONTHS = [
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-]
 
 
 # ------------------------------------------------------------------
@@ -204,10 +198,6 @@ def _get_template() -> Template:
     return _template_cache[key]
 
 
-def _format_date_es(day: datetime) -> str:
-    return f"{day.day} de {_SPANISH_MONTHS[day.month - 1]} de {day.year}"
-
-
 def render_reminder(
     event: dict,
     invitee: dict,
@@ -215,26 +205,29 @@ def render_reminder(
     config: dict,
     tz: str,
 ) -> tuple[str, str]:
-    """Return ``(subject, html_body)`` for a reminder to *invitee*."""
+    """Return ``(subject, html_body)`` for a personal reminder to *invitee*.
+
+    Reads as a message written by *sender_name* — natural prose, no marketing
+    footer. The greeting only uses a real display name; it never falls back to
+    showing the raw email address.
+    """
     zone = ZoneInfo(tz)
     start_local = event["start"].astimezone(zone)
     meeting_time = start_local.strftime("%H:%M")
-    location = event.get("location") or event.get("meet_link") or ""
-    invitee_name = invitee.get("name") or invitee.get("email", "")
 
-    # str() so the escaped Markup result does not re-escape the trusted
-    # signature HTML appended below.
+    raw_name = invitee.get("name") or ""
+    invitee_name = raw_name if raw_name and "@" not in raw_name else ""
+
     html = str(
         _get_template().render(
             invitee_name=invitee_name,
             meeting_title=event.get("summary", ""),
-            meeting_date=_format_date_es(start_local),
             meeting_time=meeting_time,
-            location=location,
+            meet_link=event.get("meet_link") or "",
+            location=event.get("location") or "",
             sender_name=sender_name,
         )
     )
-    html += _load_signature(config)
     subject = f"Recordatorio: {event.get('summary', '')} hoy a las {meeting_time}"
     return subject, html
 
@@ -260,7 +253,7 @@ def process_mailbox(
     tz = settings.get("timezone", "Europe/Madrid")
     max_attendees = settings.get("max_attendees", 2)
     user_email = config["email"]
-    sender_name = config.get("send_as") or user_email
+    sender_name = settings.get("sender_name") or config.get("send_as") or user_email
     mailbox = config.get("name", user_email)
 
     events = calendar.list_events_for_day(day, tz)

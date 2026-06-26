@@ -186,32 +186,34 @@ La clave se calcula después de normalizar email a lowercase y start a ISO en `t
 
 ## Plantilla del email
 
-`templates/calendar_reminder.html` (Jinja2, ya es dependencia). Variables:
+`templates/calendar_reminder.html` (Jinja2, ya es dependencia, con `autoescape=True`). Variables:
 
-- `invitee_name` — nombre del invitado (fallback al email si no hay nombre).
+- `invitee_name` — nombre real del invitado (Calendar `displayName`). Si no hay nombre o parece un
+  email, se omite y el saludo cae a `¡Hola!`. **Nunca** se muestra el email en el saludo.
 - `meeting_title` — `summary` del evento.
-- `meeting_date` — fecha legible (Europe/Madrid).
 - `meeting_time` — hora de inicio (Europe/Madrid).
-- `location` — ubicación física o link de Meet (lo que haya).
-- `sender_name` — nombre/email del titular que envía el recordatorio (mailbox o `send_as`).
-- `calendar_organizer_name` — organizador real del evento, solo si se quiere mostrar.
+- `meet_link` / `location` — si hay Meet, una línea con el enlace; si no, la ubicación física; si no
+  hay ninguno, se omite la línea (sin placeholders vacíos).
+- `sender_name` — nombre con el que se firma, desde `calendar_reminders.sender_name` (fallback a
+  `send_as` y luego al email). Configurado como `Miguel`.
 
-No asumir que `event.organizer` es el titular: en eventos creados por terceros, el titular puede ser
-solo attendee. La plantilla base debe hablar desde la cuenta que envía (`sender_name`) y no presentar
-al titular como organizador si Google Calendar indica otro organizador.
+Asunto: `Recordatorio: {meeting_title} hoy a las {meeting_time}`.
 
-Se le concatena el footer usando la misma regla que `actions._load_signature(config)`:
+### Diseño de credibilidad (parece escrito a mano)
 
-- `signature_file` custom del YAML si existe;
-- `signature_file: ""` desactiva la firma;
-- default `templates/signature.html`;
-- footer siempre en inglés.
+**Objetivo**: el destinatario debe percibir un mensaje **personal, escrito por Miguel esa misma
+mañana**, no una automatización. Decisiones deliberadas:
 
-El cuerpo del recordatorio puede ir en español, pero el footer permanece en inglés.
+1. **Sin footer de marketing.** A diferencia del resto de emails del bot, los recordatorios **no**
+   llevan el footer de `aiship.co` (que delataría "AI assistant"). El cuerpo es prosa natural con
+   despedida personal ("Un saludo, Miguel").
+2. **Hora "rota" de envío: 09:16, no 09:00.** Una hora en punto parece un cron disparando; una hora
+   impar parece que alguien se sentó a escribir en un momento cualquiera de la mañana. Configurable
+   por mailbox vía `send_time`.
+3. **Saludo con nombre real o genérico**, nunca el email crudo (que gritaría "mailmerge").
 
-Asunto sugerido: `Recordatorio: {meeting_title} hoy a las {meeting_time}`.
-
-Si no hay `location` ni `meet_link`, la plantilla omite esa línea; no mostrar placeholders vacíos.
+Esta es una excepción consciente a la regla global de footer de marketing en salientes (documentada
+en `CLAUDE.md`), aprobada por el usuario para esta feature concreta.
 
 ## Scheduling e idempotencia
 

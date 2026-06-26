@@ -302,14 +302,26 @@ class TestRenderReminder:
         assert "10:00" in html
         assert "Sala A" in html
 
-    def test_footer_signature_appended_in_english(self):
-        _, html = render_reminder(_ev(), self._invitee(), "Jesus", CONFIG, "Europe/Madrid")
-        assert "aiship.co" in html
-
-    def test_signature_disabled(self):
-        cfg = {**CONFIG, "signature_file": ""}
-        _, html = render_reminder(_ev(), self._invitee(), "Jesus", cfg, "Europe/Madrid")
+    def test_no_marketing_footer(self):
+        # Reminders should read as a personal message, not an automation.
+        _, html = render_reminder(_ev(), self._invitee(), "Miguel", CONFIG, "Europe/Madrid")
         assert "aiship.co" not in html
+        assert "AI assistant" not in html
+
+    def test_greeting_uses_real_name(self):
+        _, html = render_reminder(
+            _ev(), _att("ana@example.com", name="Ana"), "Miguel", CONFIG, "Europe/Madrid"
+        )
+        assert "Hola Ana" in html
+
+    def test_greeting_without_name_avoids_showing_email(self):
+        invitee = _att("bob@example.com")  # no display name → falls back to email
+        _, html = render_reminder(_ev(), invitee, "Miguel", CONFIG, "Europe/Madrid")
+        assert "bob@example.com" not in html
+
+    def test_signoff_uses_sender_name(self):
+        _, html = render_reminder(_ev(), self._invitee(), "Miguel", CONFIG, "Europe/Madrid")
+        assert "Miguel" in html
 
     def test_omits_location_line_when_empty(self):
         ev = _ev(location="", meet_link="")
@@ -324,8 +336,6 @@ class TestRenderReminder:
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
         assert "<b>x</b>" not in html
-        # The signature (trusted) must survive escaping intact
-        assert "aiship.co" in html
 
 
 # ------------------------------------------------------------------
@@ -385,6 +395,18 @@ class TestProcessMailbox:
         state = ReminderState.load_data({})
         process_mailbox(gmail, cal, CONFIG, state, day=DAY, sent_at="t")
         gmail.send_email.assert_not_called()
+
+    def test_email_signed_with_config_sender_name(self):
+        gmail = MagicMock()
+        cal = self._calendar([_ev()])
+        state = ReminderState.load_data({})
+        cfg = {
+            **CONFIG,
+            "calendar_reminders": {**CONFIG["calendar_reminders"], "sender_name": "Miguel"},
+        }
+        process_mailbox(gmail, cal, cfg, state, day=DAY, sent_at="t")
+        html = gmail.send_email.call_args.args[3]
+        assert "Miguel" in html
 
     def test_two_recipients_two_sends(self):
         gmail = MagicMock()

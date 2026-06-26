@@ -9,10 +9,15 @@ query: is:unread in:inbox
 # scope calendar.readonly (uv run python scripts/get_refresh_token.py). Con el
 # token actual (gmail.modify) las llamadas a Calendar fallan por scope insuficiente.
 calendar_reminders:
-  enabled: false
-  send_time: "09:00"
+  enabled: true
+  # 09:16 (no 09:00) a propósito: una hora "rota" parece que la persona se sentó
+  # a escribir el recordatorio a mano en un momento cualquiera de la mañana, no que
+  # un sistema lo dispara en punto. Objetivo: que el destinatario perciba un mensaje
+  # personal escrito por Miguel, no una automatización.
+  send_time: "09:16"
   timezone: Europe/Madrid
   max_attendees: 2          # invitados además del titular (reuniones 1:1 y trío)
+  sender_name: Miguel       # nombre con el que se firma el recordatorio
 
 classifier:
   prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
