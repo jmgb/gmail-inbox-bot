@@ -33,25 +33,40 @@ async def health() -> dict:
 # Background bot polling thread
 # ---------------------------------------------------------------------------
 
+
+def _is_truthy(var: str) -> bool:
+    return os.getenv(var, "").lower() in ("1", "true", "yes")
+
+
 _bot_thread: threading.Thread | None = None
+_reminder_thread: threading.Thread | None = None
 
 
 def _run_bot_in_thread() -> None:
     """Run the polling bot in a background thread."""
     from .bot import run
 
-    dry_run = os.getenv("DRY_RUN", "").lower() in ("1", "true", "yes")
     try:
-        run(dry_run=dry_run)
+        run(dry_run=_is_truthy("DRY_RUN"))
     except Exception:
         log.exception("Bot thread crashed")
 
 
+def _run_reminder_scheduler() -> None:
+    """Run the daily calendar-reminder scheduler in a background thread."""
+    from .calendar_reminders import run_scheduler
+
+    try:
+        run_scheduler(dry_run=_is_truthy("DRY_RUN"))
+    except Exception:
+        log.exception("Calendar reminder scheduler thread crashed")
+
+
 @app.on_event("startup")
 async def start_bot_thread() -> None:
-    """Start the polling bot in a daemon thread when the FastAPI app starts."""
-    global _bot_thread
-    if os.getenv("DISABLE_BOT", "").lower() in ("1", "true", "yes"):
+    """Start the polling bot and reminder scheduler as daemon threads."""
+    global _bot_thread, _reminder_thread
+    if _is_truthy("DISABLE_BOT"):
         log.info("Bot disabled via DISABLE_BOT env var — only admin UI running")
         return
 
@@ -60,3 +75,9 @@ async def start_bot_thread() -> None:
     _bot_thread = threading.Thread(target=_run_bot_in_thread, daemon=True, name="gmail-bot")
     _bot_thread.start()
     log.info("Bot polling thread started")
+
+    _reminder_thread = threading.Thread(
+        target=_run_reminder_scheduler, daemon=True, name="calendar-reminders"
+    )
+    _reminder_thread.start()
+    log.info("Calendar reminder scheduler thread started")

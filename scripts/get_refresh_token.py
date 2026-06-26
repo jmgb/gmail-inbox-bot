@@ -17,6 +17,7 @@ import httpx
 SCOPE = " ".join(
     [
         "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/documents",
         "https://www.googleapis.com/auth/presentations",
         "https://www.googleapis.com/auth/drive.file",

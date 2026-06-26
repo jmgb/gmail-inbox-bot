@@ -544,6 +544,77 @@ class TestReplyToEmail:
 
 
 # ------------------------------------------------------------------
+# send_email — fresh outgoing email (no threading)
+# ------------------------------------------------------------------
+
+
+class TestSendEmail:
+    def _send_resp(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    def test_sends_to_messages_send(self, client, mock_http):
+        mock_http.request.return_value = self._send_resp()
+        client.send_email("me@gmail.com", "guest@example.com", "Recordatorio", "<p>Hola</p>")
+
+        call = mock_http.request.call_args
+        assert "/messages/send" in call[0][1]
+
+    def test_sets_to_subject_and_from(self, client, mock_http):
+        mock_http.request.return_value = self._send_resp()
+        client.send_email("me@gmail.com", "guest@example.com", "Recordatorio", "<p>Hola</p>")
+
+        call = mock_http.request.call_args
+        body = call.kwargs.get("json") or call[1].get("json")
+        raw = base64.urlsafe_b64decode(body["raw"])
+        assert b"guest@example.com" in raw
+        assert b"Recordatorio" in raw
+        assert b"me@gmail.com" in raw
+
+    def test_no_threading_headers(self, client, mock_http):
+        """A fresh email must not carry In-Reply-To/References nor a threadId."""
+        mock_http.request.return_value = self._send_resp()
+        client.send_email("me@gmail.com", "guest@example.com", "Asunto", "<p>x</p>")
+
+        call = mock_http.request.call_args
+        body = call.kwargs.get("json") or call[1].get("json")
+        raw = base64.urlsafe_b64decode(body["raw"])
+        assert b"In-Reply-To" not in raw
+        assert b"References" not in raw
+        assert "threadId" not in body
+
+    def test_uses_send_as(self, mock_http):
+        client = _make_client(send_as="alias@midominio.com")
+        client._http = mock_http
+        client._access_token = "fake"
+        mock_http.request.return_value = self._send_resp()
+
+        client.send_email("me@gmail.com", "guest@example.com", "Asunto", "<p>x</p>")
+        call = mock_http.request.call_args
+        body = call.kwargs.get("json") or call[1].get("json")
+        raw = base64.urlsafe_b64decode(body["raw"])
+        assert b"alias@midominio.com" in raw
+
+    def test_force_draft_creates_draft(self, client, mock_http):
+        mock_http.request.return_value = self._send_resp()
+        client.send_email(
+            "me@gmail.com", "guest@example.com", "Asunto", "<p>x</p>", force_draft=True
+        )
+        call = mock_http.request.call_args
+        assert "/drafts" in call[0][1]
+
+    def test_html_content_type(self, client, mock_http):
+        mock_http.request.return_value = self._send_resp()
+        client.send_email("me@gmail.com", "guest@example.com", "Asunto", "<p>negrita</p>")
+        call = mock_http.request.call_args
+        body = call.kwargs.get("json") or call[1].get("json")
+        raw = base64.urlsafe_b64decode(body["raw"])
+        assert b"text/html" in raw
+
+
+# ------------------------------------------------------------------
 # Normalisation is compatible with actions.already_processed
 # ------------------------------------------------------------------
 

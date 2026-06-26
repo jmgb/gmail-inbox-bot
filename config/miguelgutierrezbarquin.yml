@@ -4,6 +4,16 @@ refresh_token_env: GOOGLE_REFRESH_TOKEN_MIGUELGUTIERREZBARQUIN
 # send_as: alias@midominio.com  # descomentar si hay alias configurado
 query: is:unread in:inbox
 
+# --- Recordatorios diarios de Google Calendar ---
+# IMPORTANTE: poner enabled: true SOLO tras re-autorizar el refresh token con el
+# scope calendar.readonly (uv run python scripts/get_refresh_token.py). Con el
+# token actual (gmail.modify) las llamadas a Calendar fallan por scope insuficiente.
+calendar_reminders:
+  enabled: false
+  send_time: "09:00"
+  timezone: Europe/Madrid
+  max_attendees: 2          # invitados además del titular (reuniones 1:1 y trío)
+
 classifier:
   prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
   # model: gpt-5.2-2025-12-11  # descomentar para override del modelo

@@ -289,20 +289,19 @@ class GmailClient:
         return msg
 
     def _send_or_draft(self, mime_msg, thread_id: str, force_draft: bool) -> None:
-        """Send the message or create a draft depending on mode."""
+        """Send the message or create a draft depending on mode.
+
+        ``thread_id`` is only attached when truthy — a fresh email (no thread)
+        must not carry an empty ``threadId``.
+        """
         raw = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode()
+        message: dict = {"raw": raw}
+        if thread_id:
+            message["threadId"] = thread_id
         if self.draft_mode or force_draft:
-            self._request(
-                "POST",
-                "/drafts",
-                json={"message": {"raw": raw, "threadId": thread_id}},
-            )
+            self._request("POST", "/drafts", json={"message": message})
         else:
-            self._request(
-                "POST",
-                "/messages/send",
-                json={"raw": raw, "threadId": thread_id},
-            )
+            self._request("POST", "/messages/send", json=message)
 
     def reply_to_email(
         self,
@@ -322,6 +321,23 @@ class GmailClient:
             to_addr = meta["from"]
         mime = self._build_reply_mime(meta, html_body, subject, from_addr, to_addr)
         self._send_or_draft(mime, meta["threadId"], force_draft)
+
+    def send_email(
+        self,
+        user_email: str,
+        to_address: str,
+        subject: str,
+        html_body: str,
+        *,
+        force_draft: bool = False,
+    ) -> None:
+        """Send a fresh standalone email (no threading headers)."""
+        from_addr = self.send_as or user_email
+        msg = MIMEText(html_body, "html", "utf-8")
+        msg["To"] = to_address
+        msg["From"] = from_addr
+        msg["Subject"] = subject
+        self._send_or_draft(msg, "", force_draft)
 
     def reply_with_attachment(
         self,

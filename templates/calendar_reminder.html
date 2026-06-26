@@ -1,0 +1,26 @@
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333333;line-height:1.6;">
+  <p>Hola {{ invitee_name }},</p>
+  <p>Te escribo para recordarte nuestra reunión de hoy:</p>
+  <table style="border-collapse:collapse;margin:12px 0;">
+    <tr>
+      <td style="padding:2px 8px 2px 0;color:#888888;">Reunión</td>
+      <td style="padding:2px 0;"><strong>{{ meeting_title }}</strong></td>
+    </tr>
+    <tr>
+      <td style="padding:2px 8px 2px 0;color:#888888;">Fecha</td>
+      <td style="padding:2px 0;">{{ meeting_date }}</td>
+    </tr>
+    <tr>
+      <td style="padding:2px 8px 2px 0;color:#888888;">Hora</td>
+      <td style="padding:2px 0;">{{ meeting_time }}</td>
+    </tr>
+    {% if location %}
+    <tr>
+      <td style="padding:2px 8px 2px 0;color:#888888;">Dónde</td>
+      <td style="padding:2px 0;">{{ location }}</td>
+    </tr>
+    {% endif %}
+  </table>
+  <p>¡Nos vemos!</p>
+  <p style="margin-top:16px;">{{ sender_name }}</p>
+</div>
