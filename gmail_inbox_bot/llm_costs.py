@@ -16,9 +16,9 @@ class ModelPrice(TypedDict):
 MODEL_PRICING: dict[str, ModelPrice] = {
     "gpt-5.1-2025-11-13": {"input": 1.25, "output": 10.00, "provider": "OpenAI"},
     "gpt-5.2-2025-12-11": {"input": 1.75, "output": 14.00, "provider": "OpenAI"},
-    "gpt-5.4-2026-03-05": {"input": 2.50, "output": 15.00, "provider": "OpenAI"},
-    "gpt-5.4-mini-2026-03-17": {"input": 0.75, "output": 4.50, "provider": "OpenAI"},
-    "gpt-5.4-nano-2026-03-17": {"input": 0.20, "output": 1.25, "provider": "OpenAI"},
+    "gpt-5.6-sol": {"input": 5.00, "output": 30.00, "provider": "OpenAI"},
+    "gpt-5.6-terra": {"input": 2.50, "output": 15.00, "provider": "OpenAI"},
+    "gpt-5.6-luna": {"input": 1.00, "output": 6.00, "provider": "OpenAI"},
     "gpt-realtime-2025-08-28": {"input": 32.00, "output": 64.00, "provider": "OpenAI"},
     "gpt-realtime-mini-2025-10-06": {
         "input": 10.00,

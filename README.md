@@ -152,7 +152,7 @@ borrador, nunca en emails enviados).
 `gmail_inbox_bot/prompts/clasificador_inbox.txt` (referenciado por `classifier.prompt_file`).
 
 - **Modelo por defecto**: `openai/gpt-oss-120b` vía **Groq** (`GROQ_API_KEY`).
-- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.4-mini` vía
+- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.6-terra` vía
   **OpenAI** (`OPENAI_API_KEY`).
 - **Override por cuenta**: `classifier.model` en el YAML.
 
@@ -278,7 +278,7 @@ poll_interval_seconds: 600
 
 classifier:
   prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
-  # model: gpt-5.4-mini-2026-03-17                  # override opcional
+  # model: gpt-5.6-terra                  # override opcional
 
 calendar_reminders:                                 # opt-in (ver sección)
   enabled: true
