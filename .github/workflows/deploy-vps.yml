@@ -76,6 +76,22 @@ jobs:
         run: |
           echo "image_ref=${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
+      # GHCR no borra nada nunca: llegó a 60 versiones antes de la primera purga
+      # (2026-07-17). Cada build sube 3 versiones (la imagen + los artefactos de
+      # buildx), así que 12 ≈ 4 builds de margen para rollback. Corre DESPUÉS del
+      # push, por lo que la imagen recién construida es la más reciente y nunca se
+      # toca; `main` apunta a ella y es lo que el VPS pulea por digest. Este repo
+      # despliega en CADA push a main (sin gate VPS_AUTO_DEPLOY_ENABLED), así que
+      # sin esto el registro crece sin techo.
+      # Poda manual equivalente: presupuestor/scripts/purge-ghcr-versions.sh
+      - name: Purga versiones antiguas en GHCR
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: gmail-inbox-bot
+          package-type: container
+          min-versions-to-keep: 12
+
   deploy:
     needs: build-image
     runs-on: ubuntu-latest
