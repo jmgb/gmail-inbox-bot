@@ -3,10 +3,15 @@
 **Fecha**: 2026-07-19
 **Estado**: fase inicial implementada y piloto ejecutado; escalado pendiente de revisión humana
 
-**Resultado del piloto (2026-07-19)**: `jesus82c`, `has:attachment`, 10 mensajes procesados, 10
-`.eml` íntegros, 10 artefactos extraídos, 0 errores y 0 escrituras en Gmail. La muestra contenía
-4 `application/gzip` y 6 `application/zip`; no contenía PDF ni imágenes inline, por lo que todavía no
-se considera validada la cobertura de esos dos casos.
+**Resultado de las muestras (2026-07-19)**: `jesus82c`, `has:attachment`, primero 10 mensajes y
+después 50 mensajes nuevos: 60 `.eml` íntegros, 65 artefactos extraídos, 0 errores y 0 escrituras en
+Gmail. El conjunto contiene 54 adjuntos, 3 PDF y 8 imágenes inline (`application/zip`,
+`application/gzip`, `application/ics`, `application/pdf` e `image/png`). Todos los hashes locales
+verificados coinciden.
+
+El descubrimiento read-only de `has:attachment` devuelve 18.485 mensajes en esta cuenta. Con 37
+páginas de 500 y una llamada `messages.get` por mensaje, el mínimo estimado es 369.885 unidades de
+API; el barrido completo se mantiene detrás del gate humano.
 
 ## Objetivo
 
@@ -16,10 +21,11 @@ mensaje, cuáles se pueden mover a papelera.
 
 La adopción será deliberadamente progresiva:
 
-1. piloto de 10 mensajes de `jesus82c@gmail.com`;
-2. todos los mensajes `has:attachment` de esa cuenta;
-3. repetición en `miguelgutierrezbarquin@gmail.com`;
-4. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
+1. piloto de 10 mensajes de `jesus82c@gmail.com` (completado);
+2. muestra de 50 mensajes nuevos de esa cuenta (completada);
+3. todos los mensajes `has:attachment` de esa cuenta (pendiente de revisión humana);
+4. repetición en `miguelgutierrezbarquin@gmail.com`;
+5. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
    no incluya en `has:attachment`.
 
 No se moverá ningún mensaje a papelera durante el piloto.
@@ -105,11 +111,12 @@ su MIME. Descargar URLs externas —incluidos píxeles de tracking— queda fuer
 |---|---|:---:|---|
 | 0 | Tests y fixtures locales | No | Suite verde |
 | 1 | 10 mensajes `has:attachment` de `jesus82c` | No | Revisión manual de EML, ficheros y CSV |
-| 2 | Todos los `has:attachment` de `jesus82c` | No | 0 errores, hashes válidos y recuentos revisados |
-| 3 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Auditoría de una tanda pequeña |
-| 4 | Todos los `has:attachment` de `miguelgutierrezbarquin` | No | Mismas validaciones que fase 2 |
-| 5 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
-| 6 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
+| 2 | Muestra de 50 nuevos `has:attachment` de `jesus82c` | No | Completada: PDF, inline, hashes y 0 errores |
+| 3 | Todos los `has:attachment` de `jesus82c` | No | Revisión humana de la muestra y espacio/cuota |
+| 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Auditoría de una tanda pequeña |
+| 5 | Todos los `has:attachment` de `miguelgutierrezbarquin` | No | Mismas validaciones que fase 3 |
+| 6 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
+| 7 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
 
 Cada gate exige decisión humana. El script nunca encadena automáticamente descarga y papelera.
 
@@ -145,7 +152,8 @@ Para cada uno de los 10 mensajes:
 - verificar que el mensaje de Gmail sigue intacto.
 
 Además se revisan nombres generados, rutas, caracteres Unicode, mensajes sin ficheros extraíbles y el
-resumen total. Si la muestra no contiene PDF o inline, se ejecuta otra tanda pequeña antes de escalar.
+resumen total. La segunda muestra ya contiene PDF e imágenes inline, por lo que esa cobertura queda
+validada antes de solicitar el barrido completo.
 
 ## Arquitectura
 
@@ -312,15 +320,15 @@ uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox jesus82c \
   --query 'has:attachment' --max-messages 10 --workers 1
 
-# Fase 2: continuar hasta completar la primera cuenta
+# Fase 3: continuar hasta completar la primera cuenta (secuencial por ahora)
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox jesus82c \
-  --query 'has:attachment' --workers 4
+  --query 'has:attachment' --workers 1
 
-# Fase 4: segunda cuenta, solo cuando se apruebe el gate anterior
+# Fase 5: segunda cuenta, solo cuando se apruebe el gate anterior
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox miguelgutierrezbarquin \
-  --query 'has:attachment' --workers 4
+  --query 'has:attachment' --workers 1
 
 # Fase 6 futura: ampliar a mensajes no cubiertos por has:attachment
 uv run python scripts/download_attachments.py \
@@ -337,12 +345,14 @@ llegados mientras corría. En el piloto no se hace ese segundo pase.
 ## Cuota y concurrencia
 
 Según la cuota publicada a 2026-07-19, hay 6.000 unidades/minuto por usuario;
-`messages.list` cuesta 5 y `messages.get` cuesta 20. El diseño procesa una sola cuenta cada vez, usa
-un limitador compartido de 3 solicitudes/s y permite entre 1 y 8 workers.
+`messages.list` cuesta 5 y `messages.get` cuesta 20. El diseño procesa una sola cuenta cada vez y usa
+un limitador compartido de 3 solicitudes/s. La versión actual solo admite un worker; la concurrencia
+de 1 a 8 workers es una mejora futura que deberá conservar el mismo limitador.
 
-El piloto fuerza un worker para facilitar el diagnóstico. El barrido completo propone 4 workers para
-solapar latencia, sin desactivar el limitador. El resumen muestra llamadas, reintentos, mensajes,
-bytes y duración antes de usar la segunda cuenta.
+La implementación actual fuerza un worker para facilitar el diagnóstico y comparte un limitador de
+3 solicitudes/s entre descubrimiento y descargas. El cliente reintenta hasta 5 veces los errores
+transitorios, con backoff y `Retry-After`; la concurrencia de varios workers queda para una iteración
+posterior con métricas adicionales.
 
 ## Triaje y movimiento a papelera
 
@@ -407,7 +417,8 @@ La implementación seguirá TDD y mockeará HTTP en `GmailClient._request`.
 - `--max-messages 10` cuenta solo mensajes nuevos y se puede continuar sin límite;
 - ampliación `has:attachment` → todos los mensajes sin redescargar completados;
 - regeneración de ambos CSV preservando `borrar` y evitando formula injection;
-- igualdad de claves/hashes con 1 y 4 workers.
+- igualdad de claves/hashes en ejecuciones reanudadas con el worker único actual; la variante
+  multi-worker queda pendiente.
 
 ### Papelera
 
@@ -419,15 +430,16 @@ La implementación seguirá TDD y mockeará HTTP en `GmailClient._request`.
 
 ## Plan de implementación
 
-1. Añadir outputs sensibles a `.gitignore` y crear fixtures MIME representativos.
-2. Escribir tests rojos del cliente raw, parser, estado e índices.
-3. Implementar exportador secuencial, reanudable y atómico.
-4. Ejecutar el piloto de 10 mensajes de `jesus82c`; no implementar/usar papelera para avanzar
-   automáticamente.
-5. Corregir hallazgos del piloto y repetir una tanda pequeña si faltan casos representativos.
-6. Añadir concurrencia limitada y completar `has:attachment` de `jesus82c`.
-7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente.
-8. Repetir la descarga completa en la segunda cuenta.
+1. Añadir outputs sensibles a `.gitignore` y crear fixtures MIME representativos (completado).
+2. Escribir tests rojos del cliente raw, parser, estado e índices (completado).
+3. Implementar exportador secuencial, reanudable y atómico (completado).
+4. Ejecutar el piloto de 10 mensajes de `jesus82c` sin escribir en Gmail (completado).
+5. Corregir hallazgos, añadir cuota/reintentos y ejecutar la muestra adicional de 50 mensajes
+   (completado; PDF, inline, hashes y 0 errores).
+6. Revisar manualmente y completar `has:attachment` de `jesus82c` (pendiente).
+7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente (dry-run
+   validado; ejecución real pendiente de selección humana).
+8. Repetir la descarga completa en la segunda cuenta (pendiente del gate anterior).
 9. Evaluar la iteración futura de todos los mensajes con métricas reales de tiempo y espacio.
 
 En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado en `CLAUDE.md`.

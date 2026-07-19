@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from email import policy
@@ -16,6 +17,21 @@ from gmail_inbox_bot.attachment_archive import extract_artifacts, safe_filename
 from gmail_inbox_bot.attachment_manifest import Manifest
 from gmail_inbox_bot.bot import _build_gmail_client
 from gmail_inbox_bot.config import load_env, load_mailbox_configs
+
+DEFAULT_MIN_FREE_BYTES = 100 * 1024 * 1024
+
+
+def ensure_disk_space(output_dir: Path, minimum_free_bytes: int) -> None:
+    """Fail before making API calls when the archive volume is nearly full."""
+    if minimum_free_bytes < 0:
+        raise ValueError("minimum_free_bytes must be non-negative")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    free_bytes = shutil.disk_usage(output_dir).free
+    if free_bytes < minimum_free_bytes:
+        raise RuntimeError(
+            f"espacio libre insuficiente en {output_dir}: "
+            f"{free_bytes} bytes disponibles, se requieren {minimum_free_bytes}"
+        )
 
 
 def _iso_date(internal_date: str) -> str:
@@ -130,15 +146,22 @@ def run_pilot(
     include_spam_trash: bool,
     max_messages: int | None,
     workers: int,
+    minimum_free_bytes: int = DEFAULT_MIN_FREE_BYTES,
 ) -> dict[str, int]:
     if workers != 1:
         raise ValueError("the initial pilot supports --workers 1; parallel workers come later")
     if max_messages is not None and max_messages < 1:
         raise ValueError("max_messages must be positive")
+    ensure_disk_space(output_dir, minimum_free_bytes)
 
     env = load_env()
     mailbox = _select_mailbox(load_mailbox_configs(), mailbox_selector)
-    gmail = _build_gmail_client(env, mailbox)
+    gmail = _build_gmail_client(
+        env,
+        mailbox,
+        request_rate_per_second=3.0,
+        request_retries=5,
+    )
     manifest = Manifest(output_dir / ".state.sqlite3")
     completed_ids = manifest.pending_message_ids(mailbox["email"])
     processed = 0
@@ -188,6 +211,12 @@ def main() -> int:
     parser.add_argument("--include-spam-trash", action="store_true")
     parser.add_argument("--max-messages", type=int)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--min-free-bytes",
+        type=int,
+        default=DEFAULT_MIN_FREE_BYTES,
+        help="minimum free bytes required before starting (default: 100 MiB)",
+    )
     args = parser.parse_args()
     if args.all_messages and args.query != "has:attachment":
         parser.error("use --all-messages without --query")
@@ -200,6 +229,7 @@ def main() -> int:
             include_spam_trash=args.include_spam_trash,
             max_messages=args.max_messages,
             workers=args.workers,
+            minimum_free_bytes=args.min_free_bytes,
         )
     except (RuntimeError, ValueError) as exc:
         print(f"configuración inválida: {exc}", file=sys.stderr)

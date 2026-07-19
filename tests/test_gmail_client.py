@@ -235,6 +235,78 @@ class TestAttachmentExportApi:
         assert result["id"] == "m1"
 
 
+class TestRequestRetries:
+    def test_request_rate_limiter_spaces_calls(self, mock_http, monkeypatch):
+        client = _make_client(request_rate_per_second=2)
+        client._http = mock_http
+        client._access_token = "fake-token"
+        response = MagicMock()
+        response.status_code = 200
+        response.headers = {}
+        response.raise_for_status = MagicMock()
+        mock_http.request.return_value = response
+        monotonic = MagicMock(side_effect=[100.0, 100.0, 100.1, 100.1])
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.monotonic", monotonic)
+        sleep = MagicMock()
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", sleep)
+
+        client._request("GET", "/messages")
+        client._request("GET", "/messages")
+
+        sleep.assert_called_once_with(pytest.approx(0.4))
+
+    def test_retries_429_and_honours_retry_after(self, client, mock_http, monkeypatch):
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "3"}
+        rate_limited.json.return_value = {"error": {"message": "slow down"}}
+        successful = MagicMock()
+        successful.status_code = 200
+        successful.headers = {}
+        successful.raise_for_status = MagicMock()
+        mock_http.request.side_effect = [rate_limited, successful]
+        sleep = MagicMock()
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", sleep)
+
+        result = client._request("GET", "/messages", _retries=1, _backoff=0.1)
+
+        assert result is successful
+        assert mock_http.request.call_count == 2
+        sleep.assert_called_once_with(3.0)
+
+    def test_retries_rate_limit_403_but_not_permission_403(self, client, mock_http, monkeypatch):
+        limited = MagicMock()
+        limited.status_code = 403
+        limited.headers = {}
+        limited.json.return_value = {"error": {"errors": [{"reason": "userRateLimitExceeded"}]}}
+        successful = MagicMock()
+        successful.status_code = 200
+        successful.headers = {}
+        successful.raise_for_status = MagicMock()
+        mock_http.request.side_effect = [limited, successful]
+        sleep = MagicMock()
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", sleep)
+
+        result = client._request("GET", "/messages", _retries=1, _backoff=0)
+
+        assert result is successful
+        assert mock_http.request.call_count == 2
+        sleep.assert_called_once()
+
+        forbidden = MagicMock()
+        forbidden.status_code = 403
+        forbidden.headers = {}
+        forbidden.json.return_value = {"error": {"errors": [{"reason": "forbidden"}]}}
+        forbidden.raise_for_status.side_effect = RuntimeError("forbidden")
+        mock_http.request.reset_mock()
+        mock_http.request.side_effect = None
+        mock_http.request.return_value = forbidden
+
+        with pytest.raises(RuntimeError, match="forbidden"):
+            client._request("GET", "/messages", _retries=3)
+        assert mock_http.request.call_count == 1
+
+
 class TestDecodeBody:
     def test_plain_only(self):
         payload = {

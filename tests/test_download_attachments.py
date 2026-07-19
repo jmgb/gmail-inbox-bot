@@ -2,7 +2,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from gmail_inbox_bot.attachment_manifest import Manifest
-from scripts.download_attachments import process_message
+from scripts.download_attachments import ensure_disk_space, process_message
 
 
 def _raw_message() -> bytes:
@@ -65,3 +65,17 @@ def test_process_message_archives_eml_extracts_files_and_records_state(tmp_path:
     assert "jesus82c/attachments/" in index
 
     manifest.close()
+
+
+def test_ensure_disk_space_rejects_low_free_space(tmp_path: Path, monkeypatch):
+    class Usage:
+        free = 99
+
+    monkeypatch.setattr("scripts.download_attachments.shutil.disk_usage", lambda _: Usage())
+
+    try:
+        ensure_disk_space(tmp_path, minimum_free_bytes=100)
+    except RuntimeError as exc:
+        assert "espacio libre" in str(exc)
+    else:
+        raise AssertionError("expected low disk space to be rejected")

@@ -31,6 +31,8 @@ def _build_gmail_client(
     mailbox_config: dict,
     *,
     draft_mode: bool = False,
+    request_rate_per_second: float | None = None,
+    request_retries: int = 5,
 ) -> GmailClient:
     """Build a GmailClient for a specific mailbox.
 
@@ -50,6 +52,8 @@ def _build_gmail_client(
         refresh_token=refresh_token,
         send_as=mailbox_config.get("send_as") or None,
         draft_mode=draft_mode,
+        request_rate_per_second=request_rate_per_second,
+        request_retries=request_retries,
     )
 
 

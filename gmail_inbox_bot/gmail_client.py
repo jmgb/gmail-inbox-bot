@@ -7,6 +7,7 @@ and label-based state management (Phases 1-3 of the ROADMAP).
 from __future__ import annotations
 
 import base64
+import random
 import re
 import time
 from datetime import datetime, timezone
@@ -49,12 +50,21 @@ class GmailClient:
         *,
         send_as: str | None = None,
         draft_mode: bool = False,
+        request_rate_per_second: float | None = None,
+        request_retries: int = 5,
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.refresh_token = refresh_token
         self.send_as = send_as
         self.draft_mode = draft_mode
+        if request_rate_per_second is not None and request_rate_per_second <= 0:
+            raise ValueError("request_rate_per_second must be positive")
+        if request_retries < 0:
+            raise ValueError("request_retries must be non-negative")
+        self._request_interval = 1.0 / request_rate_per_second if request_rate_per_second else 0.0
+        self._last_request_at = 0.0
+        self._request_retries = request_retries
 
         self._access_token: str | None = None
         self._http = httpx.Client(timeout=30.0)
@@ -90,25 +100,37 @@ class GmailClient:
         method: str,
         path: str,
         *,
-        _retries: int = 3,
+        _retries: int | None = None,
         _backoff: float = 1.0,
         **kwargs,
     ) -> httpx.Response:
-        """Make an authenticated request with retry logic.
+        """Make an authenticated request with throttling and bounded retries.
 
-        Retries once on 401 (token refresh) and up to *_retries* times on 5xx
-        errors with exponential backoff.
+        A 401 refreshes the OAuth token once.  Transient server failures and
+        Gmail rate-limit responses (429 and retryable 403 reasons) are retried
+        with exponential backoff, respecting ``Retry-After`` when present.
         """
         url = f"{BASE_URL}{path}" if path.startswith("/") else path
-        resp = self._http.request(method, url, headers=self._headers(), **kwargs)
-        if resp.status_code == 401:
-            self._refresh_access_token()
-            resp = self._http.request(method, url, headers=self._headers(), **kwargs)
-
-        # Retry on transient server errors (5xx)
+        retries = self._request_retries if _retries is None else _retries
+        refreshed = False
         attempt = 0
-        while resp.status_code >= 500 and attempt < _retries:
-            delay = _backoff * (2**attempt)
+        while True:
+            if self._request_interval:
+                elapsed = time.monotonic() - self._last_request_at
+                if elapsed < self._request_interval:
+                    time.sleep(self._request_interval - elapsed)
+            resp = self._http.request(method, url, headers=self._headers(), **kwargs)
+            self._last_request_at = time.monotonic()
+
+            if resp.status_code == 401 and not refreshed:
+                self._refresh_access_token()
+                refreshed = True
+                continue
+
+            if not self._is_retryable_response(resp) or attempt >= retries:
+                break
+
+            delay = self._retry_delay(resp, _backoff, attempt)
             log.warning(
                 "Gmail API %s %s returned %s, retrying in %.1fs (%d/%d)",
                 method,
@@ -116,14 +138,38 @@ class GmailClient:
                 resp.status_code,
                 delay,
                 attempt + 1,
-                _retries,
+                retries,
             )
             time.sleep(delay)
-            resp = self._http.request(method, url, headers=self._headers(), **kwargs)
             attempt += 1
 
         resp.raise_for_status()
         return resp
+
+    @staticmethod
+    def _is_retryable_response(resp: httpx.Response) -> bool:
+        if resp.status_code == 429 or resp.status_code >= 500:
+            return True
+        if resp.status_code != 403:
+            return False
+        try:
+            errors = resp.json().get("error", {}).get("errors", [])
+        except (TypeError, ValueError, AttributeError):
+            return False
+        reasons = {item.get("reason") for item in errors if isinstance(item, dict)}
+        return bool(reasons & {"rateLimitExceeded", "userRateLimitExceeded", "backendError"})
+
+    @staticmethod
+    def _retry_delay(resp: httpx.Response, backoff: float, attempt: int) -> float:
+        try:
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after is not None:
+                return max(0.0, float(retry_after))
+        except (TypeError, ValueError):
+            pass
+        base = max(0.0, backoff) * (2**attempt)
+        jitter = random.uniform(0.0, max(0.0, backoff * 0.25)) if backoff else 0.0
+        return min(60.0, base + jitter)
 
     # ------------------------------------------------------------------
     # Labels

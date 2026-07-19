@@ -376,8 +376,38 @@ mensajes nuevos; relanzar el comando no redescarga los que ya tienen estado `com
 iteración futura que también busque emails con imágenes inline no indexadas por Gmail, usar
 `--all-messages` tras validar cuotas, espacio local y cobertura de la primera iteración.
 
+La segunda muestra dejó 60 mensajes completados y 65 ficheros (54 adjuntos, 3 PDF y 8 imágenes
+inline), con todos los hashes verificados. El descubrimiento de `has:attachment` de esta cuenta
+devuelve 18.485 mensajes; un barrido completo requiere aproximadamente 369.885 unidades mínimas de
+API (`messages.list` + `messages.get`), por lo que se mantiene el escalado por fases.
+
+El exportador aplica un máximo de 3 solicitudes por segundo, reintenta errores transitorios de cuota
+(429/403 de rate limit/5xx) y respeta `Retry-After`. Antes de empezar exige 100 MiB libres (se puede
+ajustar con `--min-free-bytes`). La fase actual sigue siendo secuencial (`--workers 1`) para que el
+estado sea fácil de auditar.
+
 `scripts/migrate_archive_layout.py` solo se necesita para convertir un archivo antiguo a la carpeta
 plana `attachments/`; no llama a Gmail.
+
+### Revisar y marcar mensajes
+
+Revisa los binarios directamente en `<mailbox>/attachments/` y escribe `x` en la columna `borrar` de
+`messages.csv`. El comando siguiente es siempre dry-run: valida el EML, todos los hashes y el estado
+SQLite, pero no crea ningún cliente Gmail ni hace escrituras.
+
+```bash
+uv run python scripts/trash_marked.py --messages attachments_dump/messages.csv
+```
+
+Para una tanda aprobada, añade `--execute` desde una terminal interactiva y escribe exactamente
+`TRASH N` (donde `N` es el número de filas marcadas). Solo usa `messages.trash`, nunca borrado
+permanente, y deja la auditoría en `attachments_dump/trash_results.csv`:
+
+```bash
+uv run python scripts/trash_marked.py \
+  --messages attachments_dump/messages.csv \
+  --execute
+```
 
 ---
 
@@ -440,7 +470,7 @@ gmail_inbox_bot/
   prompts/             # prompt del clasificador
 config/                # un YAML por cuenta
 templates/             # signature.html, calendar_reminder.html
-scripts/               # get_refresh_token.py, supabase_sql.py, exportador de adjuntos
+scripts/               # OAuth, exportador de adjuntos y trash_marked.py (dry-run seguro)
 tests/                 # pytest
 docs/                  # documentación y specs
 ```
