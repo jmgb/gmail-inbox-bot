@@ -29,6 +29,7 @@ verdad** (no hay base de datos de correos): el bot lee y escribe sobre el mismo 
 - [Panel de administración](#panel-de-administración)
 - [Configuración](#configuración)
 - [OAuth2 y scopes](#oauth2-y-scopes)
+- [Archivo local y limpieza de adjuntos](#archivo-local-y-limpieza-de-adjuntos)
 - [Comandos](#comandos)
 - [Despliegue](#despliegue)
 - [Estructura del proyecto](#estructura-del-proyecto)
@@ -322,6 +323,64 @@ templates: { categoria: { esp: "...", pt: "..." } } # respuestas fijas
 
 ---
 
+## Archivo local y limpieza de adjuntos
+
+El exportador one-off `scripts/download_attachments.py` sirve para archivar una cuenta Gmail antes de
+limpiarla y liberar espacio. Es una operación **solo de lectura** sobre Gmail: descarga cada mensaje
+seleccionado como `.eml`, extrae sus adjuntos, PDF e imágenes inline, calcula hashes SHA-256 y genera
+índices CSV. No mueve ni borra mensajes.
+
+Los ficheros quedan físicamente en una carpeta plana para revisión manual:
+
+```text
+attachments_dump/
+  <mailbox>/
+    attachments/       # todos los ficheros extraídos, visibles directamente
+    messages/          # respaldo .eml completo por mensaje
+  messages.csv         # una fila por mensaje
+  index.csv            # una fila por fichero; ruta_local apunta al archivo real
+  .state.sqlite3       # estado reanudable, no editar a mano
+```
+
+El directorio contiene correo personal y está excluido de Git mediante `.gitignore`. El CSV es solo
+un índice: los binarios deben abrirse desde `<mailbox>/attachments/`.
+
+### Piloto y escalado seguro
+
+```bash
+# Piloto inicial: 10 mensajes de una sola cuenta, sin escrituras en Gmail
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox jesus82c \
+  --query 'has:attachment' \
+  --max-messages 10 \
+  --workers 1
+
+# Continuar el mismo estado hasta completar has:attachment de esa cuenta
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox jesus82c \
+  --query 'has:attachment' \
+  --workers 1
+
+# Repetir después con la segunda cuenta
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox miguelgutierrezbarquin \
+  --query 'has:attachment' \
+  --workers 1
+```
+
+El piloto actual está archivado en `attachments_dump/jesus82c/`. `--max-messages` cuenta solo
+mensajes nuevos; relanzar el comando no redescarga los que ya tienen estado `completed`. Para una
+iteración futura que también busque emails con imágenes inline no indexadas por Gmail, usar
+`--all-messages` tras validar cuotas, espacio local y cobertura de la primera iteración.
+
+`scripts/migrate_archive_layout.py` solo se necesita para convertir un archivo antiguo a la carpeta
+plana `attachments/`; no llama a Gmail.
+
+---
+
 ## Comandos
 
 ```bash
@@ -376,10 +435,12 @@ gmail_inbox_bot/
   telegram.py          # envío de mensajes a Telegram
   admin_dashboard.py   # UI de métricas (/admin/dashboard)
   admin_logs.py        # visor de logs (/admin/logs)
+  attachment_archive.py# parseo MIME y escritura segura de adjuntos
+  attachment_manifest.py # SQLite + índices CSV del archivo local
   prompts/             # prompt del clasificador
 config/                # un YAML por cuenta
 templates/             # signature.html, calendar_reminder.html
-scripts/               # get_refresh_token.py, supabase_sql.py
+scripts/               # get_refresh_token.py, supabase_sql.py, exportador de adjuntos
 tests/                 # pytest
 docs/                  # documentación y specs
 ```

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import httpx
 
+from .attachment_archive import decode_gmail_raw
 from .logger import setup_logger
 from .mail_client import MailClient  # noqa: F401  (re-export for convenience)
 
@@ -194,6 +195,42 @@ class GmailClient:
             normalised = _normalise_message(detail.json(), self._id_to_name_map())
             results.append(normalised)
         return results
+
+    def iter_message_stubs(
+        self,
+        *,
+        query: str | None,
+        include_spam_trash: bool = False,
+        page_size: int = 500,
+    ):
+        """Yield message IDs from Gmail search results, including every page."""
+        if not 1 <= page_size <= 500:
+            raise ValueError("page_size must be between 1 and 500")
+        page_token: str | None = None
+        while True:
+            params: dict[str, object] = {
+                "maxResults": page_size,
+                "includeSpamTrash": include_spam_trash,
+            }
+            if query:
+                params["q"] = query
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._request("GET", "/messages", params=params).json()
+            yield from response.get("messages", [])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return
+
+    def get_raw_message(self, message_id: str) -> dict:
+        """Fetch a complete RFC822 message and decode Gmail's raw field."""
+        response = self._request(
+            "GET",
+            f"/messages/{message_id}",
+            params={"format": "raw"},
+        ).json()
+        response["raw_bytes"] = decode_gmail_raw(response.get("raw", ""))
+        return response
 
     # ------------------------------------------------------------------
     # Update / Labels — Phase 3

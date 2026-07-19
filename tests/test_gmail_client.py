@@ -192,6 +192,49 @@ class TestGetHeader:
         assert _get_header([], "Subject") == ""
 
 
+class TestAttachmentExportApi:
+    def test_iter_message_stubs_paginates_and_passes_scope(self, client):
+        first = MagicMock()
+        first.json.return_value = {
+            "messages": [{"id": "m1", "threadId": "t1"}],
+            "nextPageToken": "next",
+        }
+        second = MagicMock()
+        second.json.return_value = {"messages": [{"id": "m2", "threadId": "t2"}]}
+        client._request = MagicMock(side_effect=[first, second])
+
+        result = list(
+            client.iter_message_stubs(
+                query="has:attachment", include_spam_trash=False, page_size=500
+            )
+        )
+
+        assert result == [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t2"}]
+        assert client._request.call_args_list[0].kwargs["params"] == {
+            "q": "has:attachment",
+            "maxResults": 500,
+            "includeSpamTrash": False,
+        }
+        assert client._request.call_args_list[1].kwargs["params"]["pageToken"] == "next"
+
+    def test_get_raw_message_decodes_base64url(self, client):
+        response = MagicMock()
+        response.json.return_value = {
+            "id": "m1",
+            "threadId": "t1",
+            "labelIds": ["INBOX"],
+            "internalDate": "1710244800000",
+            "sizeEstimate": 5,
+            "raw": "SGVsbG8",
+        }
+        client._request = MagicMock(return_value=response)
+
+        result = client.get_raw_message("m1")
+
+        assert result["raw_bytes"] == b"Hello"
+        assert result["id"] == "m1"
+
+
 class TestDecodeBody:
     def test_plain_only(self):
         payload = {
