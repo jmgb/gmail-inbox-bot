@@ -3,11 +3,10 @@
 **Fecha**: 2026-07-19
 **Estado**: fase inicial implementada y piloto ejecutado; escalado pendiente de revisión humana
 
-**Resultado de las muestras (2026-07-19)**: `jesus82c`, `has:attachment`, primero 10 mensajes y
-después 50 mensajes nuevos: 60 `.eml` íntegros, 65 artefactos extraídos, 0 errores y 0 escrituras en
-Gmail. El conjunto contiene 54 adjuntos, 3 PDF y 8 imágenes inline (`application/zip`,
-`application/gzip`, `application/ics`, `application/pdf` e `image/png`). Todos los hashes locales
-verificados coinciden.
+**Resultado (2026-07-19)**: `jesus82c`, primero 10 mensajes, después 50 de muestra y finalmente el
+filtro de alto ahorro `has:attachment larger:1M`: 1.312 `.eml` íntegros, 3.440 artefactos
+extraídos, 0 errores y 0 escrituras en Gmail. La muestra inicial contiene PDF e imágenes inline;
+en el conjunto ampliado todos los hashes locales verificados coinciden.
 
 El descubrimiento read-only de `has:attachment` devuelve 18.485 mensajes en esta cuenta. Con 37
 páginas de 500 y una llamada `messages.get` por mensaje, el mínimo estimado es 369.885 unidades de
@@ -23,9 +22,10 @@ La adopción será deliberadamente progresiva:
 
 1. piloto de 10 mensajes de `jesus82c@gmail.com` (completado);
 2. muestra de 50 mensajes nuevos de esa cuenta (completada);
-3. todos los mensajes `has:attachment` de esa cuenta (pendiente de revisión humana);
-4. repetición en `miguelgutierrezbarquin@gmail.com`;
-5. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
+3. mensajes `has:attachment larger:1M` de esa cuenta (completado: 1.252 nuevos);
+4. revisión humana y decisión de ampliar a `larger:700K` o a todos los adjuntos;
+5. repetición en `miguelgutierrezbarquin@gmail.com`;
+6. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
    no incluya en `has:attachment`.
 
 No se moverá ningún mensaje a papelera durante el piloto.
@@ -36,8 +36,8 @@ No se moverá ningún mensaje a papelera durante el piloto.
 |---|---|
 | Primera cuenta | `jesus82c@gmail.com` (`mailbox: jesus82c`) |
 | Piloto | Primeros 10 mensajes devueltos por `has:attachment`, un worker |
-| Primera iteración | Solo `has:attachment`; spam y papelera excluidos |
-| Segunda iteración futura | Todos los mensajes, para cubrir inline-only y casos no indexados como adjunto |
+| Filtro actual | `has:attachment larger:1M`; spam y papelera excluidos |
+| Ampliación siguiente | `has:attachment larger:700K` o todos los adjuntos, tras revisión |
 | Copia de seguridad | Mensaje completo `.eml` más ficheros extraídos |
 | Carpeta manual | `attachments_dump/<mailbox>/attachments/`, plana y navegable |
 | Qué se extrae | Todos los adjuntos, todas las partes `image/*` embebidas y todos los PDF |
@@ -112,11 +112,12 @@ su MIME. Descargar URLs externas —incluidos píxeles de tracking— queda fuer
 | 0 | Tests y fixtures locales | No | Suite verde |
 | 1 | 10 mensajes `has:attachment` de `jesus82c` | No | Revisión manual de EML, ficheros y CSV |
 | 2 | Muestra de 50 nuevos `has:attachment` de `jesus82c` | No | Completada: PDF, inline, hashes y 0 errores |
-| 3 | Todos los `has:attachment` de `jesus82c` | No | Revisión humana de la muestra y espacio/cuota |
-| 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Auditoría de una tanda pequeña |
-| 5 | Todos los `has:attachment` de `miguelgutierrezbarquin` | No | Mismas validaciones que fase 3 |
-| 6 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
-| 7 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
+| 3 | `has:attachment larger:1M` de `jesus82c` | No | Completada: 1.252 nuevos, hashes válidos |
+| 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Revisión humana y tanda pequeña |
+| 5 | Ampliación a `larger:700K` o todos los adjuntos | No | Decisión basada en ahorro restante |
+| 6 | Descarga de la segunda cuenta | No | Gate de la primera cuenta aprobado |
+| 7 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
+| 8 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
 
 Cada gate exige decisión humana. El script nunca encadena automáticamente descarga y papelera.
 
@@ -320,15 +321,15 @@ uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox jesus82c \
   --query 'has:attachment' --max-messages 10 --workers 1
 
-# Fase 3: continuar hasta completar la primera cuenta (secuencial por ahora)
+# Fase 3: fase de alto ahorro ya completada (mensajes >1 MB)
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox jesus82c \
-  --query 'has:attachment' --workers 1
+  --query 'has:attachment larger:1M' --workers 1
 
-# Fase 5: segunda cuenta, solo cuando se apruebe el gate anterior
+# Fase 6: segunda cuenta, solo cuando se apruebe el gate anterior
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox miguelgutierrezbarquin \
-  --query 'has:attachment' --workers 1
+  --query 'has:attachment larger:1M' --workers 1
 
 # Fase 6 futura: ampliar a mensajes no cubiertos por has:attachment
 uv run python scripts/download_attachments.py \
@@ -436,10 +437,11 @@ La implementación seguirá TDD y mockeará HTTP en `GmailClient._request`.
 4. Ejecutar el piloto de 10 mensajes de `jesus82c` sin escribir en Gmail (completado).
 5. Corregir hallazgos, añadir cuota/reintentos y ejecutar la muestra adicional de 50 mensajes
    (completado; PDF, inline, hashes y 0 errores).
-6. Revisar manualmente y completar `has:attachment` de `jesus82c` (pendiente).
+6. Revisar manualmente y decidir si ampliar de `larger:1M` a `larger:700K` o a todos los adjuntos
+   (pendiente).
 7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente (dry-run
    validado; ejecución real pendiente de selección humana).
-8. Repetir la descarga completa en la segunda cuenta (pendiente del gate anterior).
+8. Repetir la fase `larger:1M` en la segunda cuenta (pendiente del gate anterior).
 9. Evaluar la iteración futura de todos los mensajes con métricas reales de tiempo y espacio.
 
 En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado en `CLAUDE.md`.

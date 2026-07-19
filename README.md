@@ -356,18 +356,25 @@ uv run python scripts/download_attachments.py \
   --max-messages 10 \
   --workers 1
 
-# Continuar el mismo estado hasta completar has:attachment de esa cuenta
+# Fase de alto ahorro ya ejecutada: mensajes mayores de 1 MB
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump \
   --mailbox jesus82c \
-  --query 'has:attachment' \
+  --query 'has:attachment larger:1M' \
+  --workers 1
+
+# Ampliación posterior, solo tras revisar esta fase: mensajes mayores de 700 KB
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox jesus82c \
+  --query 'has:attachment larger:700K' \
   --workers 1
 
 # Repetir después con la segunda cuenta
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump \
   --mailbox miguelgutierrezbarquin \
-  --query 'has:attachment' \
+  --query 'has:attachment larger:1M' \
   --workers 1
 ```
 
@@ -380,6 +387,10 @@ La segunda muestra dejó 60 mensajes completados y 65 ficheros (54 adjuntos, 3 P
 inline), con todos los hashes verificados. El descubrimiento de `has:attachment` de esta cuenta
 devuelve 18.485 mensajes; un barrido completo requiere aproximadamente 369.885 unidades mínimas de
 API (`messages.list` + `messages.get`), por lo que se mantiene el escalado por fases.
+
+La fase de alto ahorro (`has:attachment larger:1M`) ya está completada: 1.252 mensajes nuevos, que
+dejan 1.312 mensajes archivados en total, 3.440 ficheros extraídos y 0 hashes inválidos. El archivo
+local ocupa aproximadamente 4 GB (`.eml` + ficheros extraídos); no se ha modificado Gmail.
 
 El exportador aplica un máximo de 3 solicitudes por segundo, reintenta errores transitorios de cuota
 (429/403 de rate limit/5xx) y respeta `Retry-After`. Antes de empezar exige 100 MiB libres (se puede
