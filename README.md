@@ -356,6 +356,21 @@ uv run python scripts/download_attachments.py \
   --max-messages 10 \
   --workers 1
 
+# Segunda cuenta: repetir primero el piloto y una muestra de 50 mensajes nuevos
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox miguelgutierrezbarquin \
+  --query 'has:attachment' \
+  --max-messages 10 \
+  --workers 1
+
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump \
+  --mailbox miguelgutierrezbarquin \
+  --query 'has:attachment' \
+  --max-messages 50 \
+  --workers 1
+
 # Fase de alto ahorro ya ejecutada: mensajes mayores de 1 MB
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump \
@@ -370,7 +385,7 @@ uv run python scripts/download_attachments.py \
   --query 'has:attachment larger:700K' \
   --workers 1
 
-# Repetir después con la segunda cuenta
+# Fase de alto ahorro de la segunda cuenta
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump \
   --mailbox miguelgutierrezbarquin \
@@ -378,19 +393,27 @@ uv run python scripts/download_attachments.py \
   --workers 1
 ```
 
-El piloto actual está archivado en `attachments_dump/jesus82c/`. `--max-messages` cuenta solo
-mensajes nuevos; relanzar el comando no redescarga los que ya tienen estado `completed`. Para una
-iteración futura que también busque emails con imágenes inline no indexadas por Gmail, usar
-`--all-messages` tras validar cuotas, espacio local y cobertura de la primera iteración.
+El piloto de la primera cuenta está archivado en `attachments_dump/jesus82c/` y el de Miguel en
+`attachments_dump/miguelgutierrezbarquin/`. `--max-messages` cuenta solo mensajes nuevos; relanzar
+el comando no redescarga los que ya tienen estado `completed`. Para una iteración futura que también
+busque emails con imágenes inline no indexadas por Gmail, usar `--all-messages` tras validar cuotas,
+espacio local y cobertura de esta iteración.
 
-La segunda muestra dejó 60 mensajes completados y 65 ficheros (54 adjuntos, 3 PDF y 8 imágenes
-inline), con todos los hashes verificados. El descubrimiento de `has:attachment` de esta cuenta
-devuelve 18.485 mensajes; un barrido completo requiere aproximadamente 369.885 unidades mínimas de
-API (`messages.list` + `messages.get`), por lo que se mantiene el escalado por fases.
+La muestra ampliada de `jesus82c` dejó 60 mensajes completados y 65 ficheros (54 adjuntos, 3 PDF y
+8 imágenes inline), con todos los hashes verificados. Después se archivaron 1.252 mensajes nuevos
+de más de 1 MB: 1.312 mensajes y 3.440 ficheros en total. De esos mensajes, 1.167 se movieron a
+papelera tras la revisión manual; el resultado quedó auditado en `attachments_dump/trash_results.csv`.
 
-La fase de alto ahorro (`has:attachment larger:1M`) ya está completada: 1.252 mensajes nuevos, que
-dejan 1.312 mensajes archivados en total, 3.440 ficheros extraídos y 0 hashes inválidos. El archivo
-local ocupa aproximadamente 4 GB (`.eml` + ficheros extraídos); no se ha modificado Gmail.
+En `miguelgutierrezbarquin` se completaron el piloto de 10, la muestra de 50 y la fase de alto
+ahorro. La consulta `has:attachment larger:1M` devolvió 216 mensajes (215 nuevos en el barrido),
+que junto con la muestra dejan 275 mensajes archivados y 758 ficheros extraídos: 220 PDF, 472
+imágenes inline y 66 adjuntos, con 0 hashes inválidos. La copia visible para revisión está en
+`C:\Users\USER\Desktop\revisar_miguelgutierrezbarquin`, ordenada por extensión, e incluye sus
+`index.csv` y `messages.csv`.
+
+El archivo local de `jesus82c` ocupa aproximadamente 4 GB (`.eml` + ficheros extraídos). En Miguel,
+la copia de revisión ocupa aproximadamente 916 MB de ficheros extraídos. Los archivos locales son
+la copia de seguridad; la cuenta de Miguel aún no se ha modificado.
 
 El exportador aplica un máximo de 3 solicitudes por segundo, reintenta errores transitorios de cuota
 (429/403 de rate limit/5xx) y respeta `Retry-After`. Antes de empezar exige 100 MiB libres (se puede

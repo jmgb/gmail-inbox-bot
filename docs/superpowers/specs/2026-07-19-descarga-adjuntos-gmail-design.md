@@ -1,16 +1,22 @@
 # Archivo local y limpieza progresiva de Gmail
 
-**Fecha**: 2026-07-19
-**Estado**: fase inicial implementada y piloto ejecutado; escalado pendiente de revisión humana
+**Fecha**: 2026-07-20
+**Estado**: primera cuenta revisada y enviada a papelera de forma controlada; segunda cuenta
+archivada hasta `larger:1M`, pendiente de selección humana
 
-**Resultado (2026-07-19)**: `jesus82c`, primero 10 mensajes, después 50 de muestra y finalmente el
+**Resultado (2026-07-20)**: `jesus82c`, primero 10 mensajes, después 50 de muestra y finalmente el
 filtro de alto ahorro `has:attachment larger:1M`: 1.312 `.eml` íntegros, 3.440 artefactos
-extraídos, 0 errores y 0 escrituras en Gmail. La muestra inicial contiene PDF e imágenes inline;
-en el conjunto ampliado todos los hashes locales verificados coinciden.
+extraídos y 0 hashes inválidos. Tras la revisión manual, 1.167 mensajes se movieron a papelera
+(nunca borrado permanente) y quedaron auditados en `attachments_dump/trash_results.csv`.
 
-El descubrimiento read-only de `has:attachment` devuelve 18.485 mensajes en esta cuenta. Con 37
-páginas de 500 y una llamada `messages.get` por mensaje, el mínimo estimado es 369.885 unidades de
-API; el barrido completo se mantiene detrás del gate humano.
+`miguelgutierrezbarquin` repitió el piloto de 10, la muestra de 50 y el filtro de alto ahorro:
+216 mensajes superan 1 MB (215 nuevos en el barrido), 275 mensajes archivados y 758 artefactos
+(220 PDF, 472 imágenes inline y 66 adjuntos), con 0 hashes inválidos. Gmail todavía no se ha
+modificado en esta cuenta.
+
+El descubrimiento read-only histórico de `has:attachment` en `jesus82c` devuelve 18.485 mensajes.
+Con 37 páginas de 500 y una llamada `messages.get` por mensaje, el mínimo estimado es 369.885
+unidades de API; el barrido completo se mantiene detrás del gate humano.
 
 ## Objetivo
 
@@ -23,9 +29,11 @@ La adopción será deliberadamente progresiva:
 1. piloto de 10 mensajes de `jesus82c@gmail.com` (completado);
 2. muestra de 50 mensajes nuevos de esa cuenta (completada);
 3. mensajes `has:attachment larger:1M` de esa cuenta (completado: 1.252 nuevos);
-4. revisión humana y decisión de ampliar a `larger:700K` o a todos los adjuntos;
-5. repetición en `miguelgutierrezbarquin@gmail.com`;
-6. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
+4. revisión humana de esa cuenta y movimiento controlado a papelera (completado: 1.167);
+5. piloto de 10 y muestra de 50 mensajes nuevos de `miguelgutierrezbarquin@gmail.com` (completados);
+6. mensajes `has:attachment larger:1M` de Miguel (completado: 215 nuevos; 216 en la consulta);
+7. revisión humana de Miguel y movimiento controlado a papelera (pendiente);
+8. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
    no incluya en `has:attachment`.
 
 No se moverá ningún mensaje a papelera durante el piloto.
@@ -35,11 +43,12 @@ No se moverá ningún mensaje a papelera durante el piloto.
 | Dimensión | Decisión |
 |---|---|
 | Primera cuenta | `jesus82c@gmail.com` (`mailbox: jesus82c`) |
+| Segunda cuenta | `miguelgutierrezbarquin@gmail.com` (`mailbox: miguelgutierrezbarquin`) |
 | Piloto | Primeros 10 mensajes devueltos por `has:attachment`, un worker |
 | Filtro actual | `has:attachment larger:1M`; spam y papelera excluidos |
 | Ampliación siguiente | `has:attachment larger:700K` o todos los adjuntos, tras revisión |
 | Copia de seguridad | Mensaje completo `.eml` más ficheros extraídos |
-| Carpeta manual | `attachments_dump/<mailbox>/attachments/`, plana y navegable |
+| Carpeta manual | Archivo canónico plano en `attachments_dump/<mailbox>/attachments/`; copia Windows ordenada por extensión |
 | Qué se extrae | Todos los adjuntos, todas las partes `image/*` embebidas y todos los PDF |
 | Unidad de borrado | Mensaje completo, nunca un adjunto individual |
 | Unidad de decisión | Una fila por mensaje en `messages.csv` |
@@ -65,6 +74,12 @@ attachments_dump/
 Cada nombre de `attachments/` incorpora `message_id` y `part_key` antes del nombre original, por
 ejemplo `19f..._3_factura.pdf`, para evitar colisiones. La columna `ruta_local` apunta a ese fichero
 real; `nombre_fichero` solo es su nombre legible.
+
+Para revisión cómoda en Windows se preparan copias independientes, sin sustituir el archivo
+canónico: `C:\Users\USER\Desktop\revisar` para Jesús y
+`C:\Users\USER\Desktop\revisar_miguelgutierrezbarquin` para Miguel. En esas copias los ficheros
+están agrupados por extensión y los CSV contienen índices y nombres/rutas, nunca el contenido
+binario.
 
 ## Por qué se guarda también el `.eml`
 
@@ -113,9 +128,9 @@ su MIME. Descargar URLs externas —incluidos píxeles de tracking— queda fuer
 | 1 | 10 mensajes `has:attachment` de `jesus82c` | No | Revisión manual de EML, ficheros y CSV |
 | 2 | Muestra de 50 nuevos `has:attachment` de `jesus82c` | No | Completada: PDF, inline, hashes y 0 errores |
 | 3 | `has:attachment larger:1M` de `jesus82c` | No | Completada: 1.252 nuevos, hashes válidos |
-| 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Revisión humana y tanda pequeña |
+| 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Completada: 1.167 mensajes a papelera, auditoría guardada |
 | 5 | Ampliación a `larger:700K` o todos los adjuntos | No | Decisión basada en ahorro restante |
-| 6 | Descarga de la segunda cuenta | No | Gate de la primera cuenta aprobado |
+| 6 | Descarga de la segunda cuenta: piloto, muestra y `larger:1M` | No | Completada: 275 mensajes, 758 artefactos, hashes válidos |
 | 7 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
 | 8 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
 
@@ -327,7 +342,17 @@ uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox jesus82c \
   --query 'has:attachment larger:1M' --workers 1
 
-# Fase 6: segunda cuenta, solo cuando se apruebe el gate anterior
+# Fase 6a: piloto de Miguel
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump --mailbox miguelgutierrezbarquin \
+  --query 'has:attachment' --max-messages 10 --workers 1
+
+# Fase 6b: muestra adicional de Miguel
+uv run python scripts/download_attachments.py \
+  --output-dir attachments_dump --mailbox miguelgutierrezbarquin \
+  --query 'has:attachment' --max-messages 50 --workers 1
+
+# Fase 6c: alto ahorro de Miguel (completada)
 uv run python scripts/download_attachments.py \
   --output-dir attachments_dump --mailbox miguelgutierrezbarquin \
   --query 'has:attachment larger:1M' --workers 1
@@ -439,11 +464,13 @@ La implementación seguirá TDD y mockeará HTTP en `GmailClient._request`.
 5. Corregir hallazgos, añadir cuota/reintentos y ejecutar la muestra adicional de 50 mensajes
    (completado; PDF, inline, hashes y 0 errores).
 6. Revisar manualmente y decidir si ampliar de `larger:1M` a `larger:700K` o a todos los adjuntos
-   (pendiente).
-7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente (dry-run
-   validado; ejecución real pendiente de selección humana).
-8. Repetir la fase `larger:1M` en la segunda cuenta (pendiente del gate anterior).
-9. Evaluar la iteración futura de todos los mensajes con métricas reales de tiempo y espacio.
+   (pendiente por cuenta).
+7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente
+   (completado para `jesus82c`; dry-run preparado para Miguel).
+8. Repetir el piloto, la muestra y la fase `larger:1M` en Miguel (completado).
+9. Esperar la selección de Miguel en su carpeta Windows y ejecutar su dry-run antes de pedir una
+   confirmación `TRASH N`.
+10. Evaluar la iteración futura de todos los mensajes con métricas reales de tiempo y espacio.
 
 En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado en `CLAUDE.md`.
 
@@ -455,8 +482,9 @@ En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado
 - Cada mensaje completado tiene `.eml` verificable y snapshot de sus metadatos Gmail.
 - Adjuntos, inline `image/*` y PDF presentes en esos mensajes aparecen en `index.csv`.
 - Relanzar o ampliar el límite no crea duplicados.
-- Quitar el límite continúa el mismo barrido de `jesus82c` hasta cero errores.
-- La segunda cuenta no se toca antes de aprobar el resultado de la primera.
+- Quitar el límite continúa el mismo barrido de cada cuenta hasta cero errores.
+- La segunda cuenta solo se ha leído y archivado; no se toca en Gmail antes de su selección humana y
+  confirmación independiente.
 - `messages.csv` permite ordenar por ahorro estimado y decidir a nivel de mensaje.
 - Ningún mensaje con archivo incompleto o alterado es elegible para papelera.
 - Sin `--execute` y confirmación exacta se realizan cero escrituras Gmail.
