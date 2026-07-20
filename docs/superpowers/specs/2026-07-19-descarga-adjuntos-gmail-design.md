@@ -1,18 +1,19 @@
 # Archivo local y limpieza progresiva de Gmail
 
 **Fecha**: 2026-07-20
-**Estado**: primera cuenta revisada y enviada a papelera de forma controlada; segunda cuenta
-archivada hasta `larger:1M`, pendiente de selección humana
+**Estado**: ambas cuentas archivadas, revisadas y enviadas a papelera de forma controlada; queda
+pendiente decidir si ampliar a `larger:700K` o a todos los mensajes
 
 **Resultado (2026-07-20)**: `jesus82c`, primero 10 mensajes, después 50 de muestra y finalmente el
 filtro de alto ahorro `has:attachment larger:1M`: 1.312 `.eml` íntegros, 3.440 artefactos
 extraídos y 0 hashes inválidos. Tras la revisión manual, 1.167 mensajes se movieron a papelera
-(nunca borrado permanente) y quedaron auditados en `attachments_dump/trash_results.csv`.
+(nunca borrado permanente) y la ejecución quedó auditada en la carpeta de revisión.
 
 `miguelgutierrezbarquin` repitió el piloto de 10, la muestra de 50 y el filtro de alto ahorro:
 216 mensajes superan 1 MB (215 nuevos en el barrido), 275 mensajes archivados y 758 artefactos
-(220 PDF, 472 imágenes inline y 66 adjuntos), con 0 hashes inválidos. Gmail todavía no se ha
-modificado en esta cuenta.
+(220 PDF, 472 imágenes inline y 66 adjuntos), con 0 hashes inválidos. Se protegieron 101 mensajes
+de 71 hilos y se movieron 174 mensajes de 115 hilos a papelera, con 0 errores. La auditoría está
+en `attachments_dump/trash_results_miguelgutierrezbarquin.csv` y en la carpeta Windows de revisión.
 
 El descubrimiento read-only histórico de `has:attachment` en `jesus82c` devuelve 18.485 mensajes.
 Con 37 páginas de 500 y una llamada `messages.get` por mensaje, el mínimo estimado es 369.885
@@ -32,7 +33,7 @@ La adopción será deliberadamente progresiva:
 4. revisión humana de esa cuenta y movimiento controlado a papelera (completado: 1.167);
 5. piloto de 10 y muestra de 50 mensajes nuevos de `miguelgutierrezbarquin@gmail.com` (completados);
 6. mensajes `has:attachment larger:1M` de Miguel (completado: 215 nuevos; 216 en la consulta);
-7. revisión humana de Miguel y movimiento controlado a papelera (pendiente);
+7. revisión humana de Miguel y movimiento controlado a papelera (completado: 174 mensajes);
 8. en una iteración futura, barrido de todos los mensajes para localizar recursos inline que Gmail
    no incluya en `has:attachment`.
 
@@ -131,7 +132,7 @@ su MIME. Descargar URLs externas —incluidos píxeles de tracking— queda fuer
 | 4 | Triaje/borrado controlado de `jesus82c` | Sí, solo tras confirmación | Completada: 1.167 mensajes a papelera, auditoría guardada |
 | 5 | Ampliación a `larger:700K` o todos los adjuntos | No | Decisión basada en ahorro restante |
 | 6 | Descarga de la segunda cuenta: piloto, muestra y `larger:1M` | No | Completada: 275 mensajes, 758 artefactos, hashes válidos |
-| 7 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Auditoría completa |
+| 7 | Triaje/borrado controlado de la segunda cuenta | Sí, solo tras confirmación | Completada: 174 mensajes a papelera, 0 errores |
 | 8 | Barrido futuro sin query de ambas cuentas | No inicialmente | Evaluar cobertura y coste con lo aprendido |
 
 Cada gate exige decisión humana. El script nunca encadena automáticamente descarga y papelera.
@@ -267,7 +268,7 @@ attachments_dump/
     ...
   messages.csv
   index.csv
-  trash_results.csv
+  trash_results_<cuenta>.csv
   .state.sqlite3
 ```
 
@@ -391,6 +392,7 @@ uv run python scripts/trash_marked.py --messages attachments_dump/messages.csv
 # Ejecución real, solo después de revisar el dry-run
 uv run python scripts/trash_marked.py \
   --messages attachments_dump/messages.csv \
+  --results attachments_dump/trash_results_<cuenta>.csv \
   --execute
 ```
 
@@ -405,12 +407,12 @@ Antes de incluir un mensaje en el resumen valida:
 
 `--execute` exige TTY y escribir exactamente `TRASH <numero_de_mensajes>`. Luego agrupa por cuenta y
 llama al método existente `GmailClient.delete_email()`, que usa `messages.trash`. Continúa ante fallos
-y añade una fila por mensaje a `trash_results.csv`. Si ya está en papelera registra
+y añade una fila por mensaje a `trash_results_<cuenta>.csv`. Si ya está en papelera registra
 `already_in_trash`.
 
 Nunca usa `messages.delete`, `batchDelete`, vaciado de papelera, `--yes` ni ejecución no interactiva.
-La primera ejecución real debe ser una tanda pequeña elegida por el usuario después de completar la
-cuenta `jesus82c`.
+Cada cuenta usa una auditoría independiente con `--results`; ambas ejecuciones reales se hicieron
+solo después de la selección humana y la confirmación exacta.
 
 ## Manejo de errores y privacidad
 
@@ -466,10 +468,9 @@ La implementación seguirá TDD y mockeará HTTP en `GmailClient._request`.
 6. Revisar manualmente y decidir si ampliar de `larger:1M` a `larger:700K` o a todos los adjuntos
    (pendiente por cuenta).
 7. Implementar y validar `trash_marked.py`; ejecutar solo una tanda aprobada manualmente
-   (completado para `jesus82c`; dry-run preparado para Miguel).
+   (completado para ambas cuentas: 1.167 + 174 mensajes, 0 errores).
 8. Repetir el piloto, la muestra y la fase `larger:1M` en Miguel (completado).
-9. Esperar la selección de Miguel en su carpeta Windows y ejecutar su dry-run antes de pedir una
-   confirmación `TRASH N`.
+9. Guardar auditorías separadas por cuenta y evaluar si ampliar el filtro a `larger:700K`.
 10. Evaluar la iteración futura de todos los mensajes con métricas reales de tiempo y espacio.
 
 En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado en `CLAUDE.md`.
@@ -483,8 +484,8 @@ En cada cambio relevante: `ruff`, suite completa y gate de cross-review indicado
 - Adjuntos, inline `image/*` y PDF presentes en esos mensajes aparecen en `index.csv`.
 - Relanzar o ampliar el límite no crea duplicados.
 - Quitar el límite continúa el mismo barrido de cada cuenta hasta cero errores.
-- La segunda cuenta solo se ha leído y archivado; no se toca en Gmail antes de su selección humana y
-  confirmación independiente.
+- Cada cuenta requiere su selección humana y confirmación independiente; ambas confirmaciones ya se
+  han recibido y solo se ha usado `messages.trash`, nunca borrado permanente.
 - `messages.csv` permite ordenar por ahorro estimado y decidir a nivel de mensaje.
 - Ningún mensaje con archivo incompleto o alterado es elegible para papelera.
 - Sin `--execute` y confirmación exacta se realizan cero escrituras Gmail.

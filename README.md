@@ -402,18 +402,22 @@ espacio local y cobertura de esta iteración.
 La muestra ampliada de `jesus82c` dejó 60 mensajes completados y 65 ficheros (54 adjuntos, 3 PDF y
 8 imágenes inline), con todos los hashes verificados. Después se archivaron 1.252 mensajes nuevos
 de más de 1 MB: 1.312 mensajes y 3.440 ficheros en total. De esos mensajes, 1.167 se movieron a
-papelera tras la revisión manual; el resultado quedó auditado en `attachments_dump/trash_results.csv`.
+papelera tras la revisión manual; la ejecución quedó auditada en su carpeta de revisión.
 
 En `miguelgutierrezbarquin` se completaron el piloto de 10, la muestra de 50 y la fase de alto
 ahorro. La consulta `has:attachment larger:1M` devolvió 216 mensajes (215 nuevos en el barrido),
 que junto con la muestra dejan 275 mensajes archivados y 758 ficheros extraídos: 220 PDF, 472
-imágenes inline y 66 adjuntos, con 0 hashes inválidos. La copia visible para revisión está en
+imágenes inline y 66 adjuntos, con 0 hashes inválidos. Tras proteger 101 mensajes de 71 hilos,
+se movieron 174 mensajes de 115 hilos a papelera, con 0 errores. La auditoría está en
+`attachments_dump/trash_results_miguelgutierrezbarquin.csv` y en la carpeta de revisión. La copia
+visible para revisión está en
 `C:\Users\USER\Desktop\revisar_miguelgutierrezbarquin`, ordenada por extensión, e incluye sus
 `index.csv` y `messages.csv`.
 
 El archivo local de `jesus82c` ocupa aproximadamente 4 GB (`.eml` + ficheros extraídos). En Miguel,
 la copia de revisión ocupa aproximadamente 916 MB de ficheros extraídos. Los archivos locales son
-la copia de seguridad; la cuenta de Miguel aún no se ha modificado.
+la copia de seguridad; mover mensajes a papelera mantiene la recuperación de Gmail durante su
+periodo de retención.
 
 El exportador aplica un máximo de 3 solicitudes por segundo, reintenta errores transitorios de cuota
 (429/403 de rate limit/5xx) y respeta `Retry-After`. Antes de empezar exige 100 MiB libres (se puede
@@ -437,11 +441,12 @@ uv run python scripts/trash_marked.py --messages attachments_dump/messages.csv
 
 Para una tanda aprobada, añade `--execute` desde una terminal interactiva y escribe exactamente
 `TRASH N` (donde `N` es el número de filas marcadas). Solo usa `messages.trash`, nunca borrado
-permanente, y deja la auditoría en `attachments_dump/trash_results.csv`:
+permanente, y deja la auditoría en un archivo separado por cuenta:
 
 ```bash
 uv run python scripts/trash_marked.py \
   --messages attachments_dump/messages.csv \
+  --results attachments_dump/trash_results_<cuenta>.csv \
   --execute
 ```
 
