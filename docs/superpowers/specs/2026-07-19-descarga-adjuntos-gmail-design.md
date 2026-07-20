@@ -291,6 +291,7 @@ Una fila por mensaje. Es el único CSV que lee `trash_marked.py`.
 | `estado_archivo` | `completed` o error |
 | `error` | Error sanitizado |
 | `borrar` | Vacío; el usuario escribe `x` |
+| `conservar` | Vacío o `x`; marca explícita de hilo protegido |
 
 ### `index.csv` — inventario de ficheros
 

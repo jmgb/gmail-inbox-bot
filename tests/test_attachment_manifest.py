@@ -4,7 +4,7 @@ from pathlib import Path
 from gmail_inbox_bot.attachment_manifest import Manifest
 
 
-def test_manifest_round_trip_and_csv_preserves_delete_marker(tmp_path: Path):
+def test_manifest_round_trip_and_csv_preserves_decision_markers(tmp_path: Path):
     manifest = Manifest(tmp_path / ".state.sqlite3")
     manifest.record_message(
         account="jesus82c@gmail.com",
@@ -37,7 +37,8 @@ def test_manifest_round_trip_and_csv_preserves_delete_marker(tmp_path: Path):
     manifest.export_csv(csv_path, existing_csv=None)
     with csv_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    rows[0]["borrar"] = "x"
+    rows[0]["borrar"] = ""
+    rows[0]["conservar"] = "x"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0])
         writer.writeheader()
@@ -47,6 +48,7 @@ def test_manifest_round_trip_and_csv_preserves_delete_marker(tmp_path: Path):
     manifest.export_csv(csv_path, existing_csv=csv_path)
     content = csv_path.read_text(encoding="utf-8-sig")
     assert "msg-1" in content
+    assert "conservar" in content
     assert ",x\n" in content
 
     manifest.close()

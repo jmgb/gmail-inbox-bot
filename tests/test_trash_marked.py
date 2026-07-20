@@ -70,10 +70,27 @@ def test_validate_marked_messages_blocks_corrupt_eml(tmp_path: Path):
 
 def test_validate_marked_messages_rejects_invalid_marker(tmp_path: Path):
     messages_csv = _archive(tmp_path)
-    text = messages_csv.read_text(encoding="utf-8-sig").replace(",x\n", ",si\n")
-    messages_csv.write_text(text, encoding="utf-8-sig")
+    rows = list(csv.DictReader(messages_csv.open(encoding="utf-8-sig")))
+    rows[0]["borrar"] = "si"
+    with messages_csv.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys(), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
 
     with pytest.raises(ValidationError, match="borrar"):
+        validate_marked_messages(messages_csv)
+
+
+def test_validate_marked_messages_blocks_conflicting_keep_and_delete_markers(tmp_path: Path):
+    messages_csv = _archive(tmp_path)
+    rows = list(csv.DictReader(messages_csv.open(encoding="utf-8-sig")))
+    rows[0]["conservar"] = "x"
+    with messages_csv.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys(), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    with pytest.raises(ValidationError, match="conservar y borrar"):
         validate_marked_messages(messages_csv)
 
 

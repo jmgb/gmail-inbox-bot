@@ -70,7 +70,8 @@ def validate_marked_messages(messages_csv: Path) -> list[dict]:
     """Validate every marked row and return safe, manifest-backed records.
 
     The database is authoritative for file paths, sizes, hashes and Gmail
-    labels; the CSV only supplies the user's ``borrar`` selection.
+    labels; the CSV supplies the user's ``borrar`` selection and optional
+    ``conservar`` protection marker.
     """
     if not messages_csv.is_file():
         raise ValidationError(f"no existe el CSV: {messages_csv}")
@@ -93,6 +94,11 @@ def validate_marked_messages(messages_csv: Path) -> list[dict]:
         marker = row.get("borrar", "").strip().lower()
         if marker not in {"", "x"}:
             raise ValidationError(f"marca borrar inválida para {key}: {marker!r}")
+        keep_marker = row.get("conservar", "").strip().lower()
+        if keep_marker not in {"", "x"}:
+            raise ValidationError(f"marca conservar inválida para {key}: {keep_marker!r}")
+        if marker == "x" and keep_marker == "x":
+            raise ValidationError(f"un mensaje no puede tener conservar y borrar: {key}")
         if marker == "x":
             marked_rows.append(row)
 

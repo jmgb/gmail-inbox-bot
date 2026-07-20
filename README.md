@@ -402,8 +402,10 @@ plana `attachments/`; no llama a Gmail.
 
 ### Revisar y marcar mensajes
 
-Revisa los binarios directamente en `<mailbox>/attachments/` y escribe `x` en la columna `borrar` de
-`messages.csv`. El comando siguiente es siempre dry-run: valida el EML, todos los hashes y el estado
+Revisa los binarios directamente en `<mailbox>/attachments/`. La columna `conservar` puede llevar
+`x` para dejar constancia de los hilos protegidos; `borrar` solo debe llevar `x` cuando quieras
+seleccionar un mensaje para papelera. Un mensaje no puede tener ambas marcas. El comando siguiente es
+siempre dry-run: valida el EML, todos los hashes y el estado
 SQLite, pero no crea ningún cliente Gmail ni hace escrituras.
 
 ```bash

@@ -27,6 +27,7 @@ MESSAGE_FIELDS = [
     "estado_archivo",
     "error",
     "borrar",
+    "conservar",
 ]
 ARTIFACT_FIELDS = [
     "cuenta",
@@ -182,17 +183,27 @@ class Manifest:
         return {row["message_id"] for row in rows}
 
     def export_csv(self, path: Path, existing_csv: Path | None = None) -> None:
-        markers: dict[tuple[str, str], str] = {}
+        markers: dict[tuple[str, str], tuple[str, str]] = {}
         if existing_csv and existing_csv.exists():
             with existing_csv.open(encoding="utf-8-sig", newline="") as handle:
                 for row in csv.DictReader(handle):
-                    marker = row.get("borrar", "").strip().lower()
-                    if marker not in {"", "x"}:
+                    borrar = row.get("borrar", "").strip().lower()
+                    conservar = row.get("conservar", "").strip().lower()
+                    if borrar not in {"", "x"}:
                         raise ValueError(f"invalid borrar marker for {row.get('message_id', '?')}")
+                    if conservar not in {"", "x"}:
+                        raise ValueError(
+                            f"invalid conservar marker for {row.get('message_id', '?')}"
+                        )
+                    if borrar == "x" and conservar == "x":
+                        raise ValueError(
+                            f"message cannot be both borrar and conservar: "
+                            f"{row.get('message_id', '?')}"
+                        )
                     key = (row.get("cuenta", ""), row.get("message_id", ""))
                     if key in markers:
                         raise ValueError(f"duplicate message in CSV: {key}")
-                    markers[key] = marker
+                    markers[key] = (borrar, conservar)
 
         rows = self.db.execute("SELECT * FROM messages ORDER BY account, internal_date, message_id")
         output_rows: list[dict[str, object]] = []
@@ -223,7 +234,8 @@ class Manifest:
                     "sha256_eml": row["eml_sha256"],
                     "estado_archivo": row["status"],
                     "error": _csv_safe(row["last_error"]),
-                    "borrar": markers.get(key, ""),
+                    "borrar": markers.get(key, ("", ""))[0],
+                    "conservar": markers.get(key, ("", ""))[1],
                 }
             )
         path.parent.mkdir(parents=True, exist_ok=True)
