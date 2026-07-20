@@ -202,7 +202,12 @@ def execute_trash(messages: list[dict], env: dict[str, str], configs: list[dict]
                 continue
             try:
                 if account not in clients:
-                    clients[account] = _build_gmail_client(env, _select_mailbox(configs, account))
+                    clients[account] = _build_gmail_client(
+                        env,
+                        _select_mailbox(configs, account),
+                        request_rate_per_second=3.0,
+                        request_retries=5,
+                    )
                 clients[account].delete_email(account, message["message_id"])
                 results.append({**message, "resultado": "trashed", "error": ""})
             except Exception as exc:  # noqa: BLE001 - continue and audit every message
