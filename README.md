@@ -279,7 +279,7 @@ poll_interval_seconds: 600
 
 classifier:
   prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
-  # model: gpt-5.6-terra                  # override opcional
+  # model: gpt-5.6-luna                   # override opcional
 
 calendar_reminders:                                 # opt-in (ver sección)
   enabled: true
