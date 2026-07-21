@@ -19,7 +19,7 @@ DEFAULT_MODEL = GPT_OSS_120B
 
 # Si Groq falla (quota, caída, rate limit), reintentar con OpenAI.
 FALLBACK_MODEL_MAP = {
-    GPT_OSS_120B: GPT_5_MINI,
+    GPT_OSS_120B: GPT_5_NANO,
 }
 
 

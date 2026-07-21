@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from gmail_inbox_bot.classifier import (
     DEFAULT_MODEL,
     GPT_5_MINI,
+    GPT_5_NANO,
     GPT_OSS_120B,
     classify_email,
     generate_response,
@@ -303,8 +304,8 @@ class TestProviderRoutingAndFallback:
 
         assert groq_client.responses.create.call_count == 1
         assert openai_client.responses.create.call_count == 1
-        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_MINI
-        assert result["model_used"] == GPT_5_MINI
+        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_NANO
+        assert result["model_used"] == GPT_5_NANO
 
     def test_both_providers_fail_returns_none(self):
         groq_client = MagicMock(name="groq")
@@ -341,8 +342,8 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
-        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_MINI
-        assert result["model_used"] == GPT_5_MINI
+        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_NANO
+        assert result["model_used"] == GPT_5_NANO
 
 
 class TestGenerateResponse:

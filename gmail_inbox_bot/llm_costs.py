@@ -43,6 +43,8 @@ MODEL_PRICING: dict[str, ModelPrice] = {
     "gemini-flash-latest": {"input": 1.50, "output": 9.00, "provider": "Google"},
     "gemini-flash-lite-latest": {"input": 0.25, "output": 1.50, "provider": "Google"},
     "gemini-3.5-flash": {"input": 1.50, "output": 9.00, "provider": "Google"},
+    "gemini-3.6-flash": {"input": 1.50, "output": 7.50, "provider": "Google"},
+    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50, "provider": "Google"},
     "gemini-3.1-flash-lite-image": {"input": 0.25, "output": 1.50, "provider": "Google"},
     "gemini-3.1-flash-image": {"input": 0.50, "output": 3.00, "provider": "Google"},
     "gemini-3-pro-image": {"input": 2.00, "output": 12.00, "provider": "Google"},
@@ -83,6 +85,16 @@ MODEL_PRICING: dict[str, ModelPrice] = {
     "google/gemini-3.5-flash": {
         "input": 1.50,
         "output": 9.00,
+        "provider": "OpenRouter",
+    },
+    "google/gemini-3.6-flash": {
+        "input": 1.50,
+        "output": 7.50,
+        "provider": "OpenRouter",
+    },
+    "google/gemini-3.5-flash-lite": {
+        "input": 0.30,
+        "output": 2.50,
         "provider": "OpenRouter",
     },
     "deepseek/deepseek-chat-v3.1": {

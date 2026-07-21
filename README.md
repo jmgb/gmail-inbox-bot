@@ -153,7 +153,7 @@ borrador, nunca en emails enviados).
 `gmail_inbox_bot/prompts/clasificador_inbox.txt` (referenciado por `classifier.prompt_file`).
 
 - **Modelo por defecto**: `openai/gpt-oss-120b` vía **Groq** (`GROQ_API_KEY`).
-- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.6-terra` vía
+- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.6-luna` vía
   **OpenAI** (`OPENAI_API_KEY`).
 - **Override por cuenta**: `classifier.model` en el YAML.
 
