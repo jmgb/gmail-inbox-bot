@@ -12,14 +12,13 @@ log = setup_logger("gmail_inbox_bot.classifier", "logs/app.log")
 
 # Default model — overridden by YAML config per mailbox
 GPT_5 = "gpt-5.6-sol"
-GPT_5_MINI = "gpt-5.6-luna"
-GPT_5_NANO = "gpt-5.6-luna"
+GPT_5_LUNA = "gpt-5.6-luna"
 GPT_OSS_120B = "openai/gpt-oss-120b"
 DEFAULT_MODEL = GPT_OSS_120B
 
 # Si Groq falla (quota, caída, rate limit), reintentar con OpenAI.
 FALLBACK_MODEL_MAP = {
-    GPT_OSS_120B: GPT_5_NANO,
+    GPT_OSS_120B: GPT_5_LUNA,
 }
 
 
@@ -53,7 +52,10 @@ def _create_response_with_fallback(client_or_clients, *, model: str, **kwargs):
             continue
 
         try:
-            response = client.responses.create(model=current_model, **kwargs)
+            call_kwargs = dict(kwargs)
+            if current_model == GPT_5_LUNA:
+                call_kwargs["reasoning"] = {"effort": "max"}
+            response = client.responses.create(model=current_model, **call_kwargs)
             return current_model, response
         except Exception as exc:
             fallback_model = FALLBACK_MODEL_MAP.get(current_model)
