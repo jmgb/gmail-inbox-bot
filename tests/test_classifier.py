@@ -1,7 +1,18 @@
-"""Tests for classifier.py — OpenAI Responses API classification."""
+"""Contract tests for the synchronous classifier facade over the LLM gateway."""
 
-import json
-from unittest.mock import MagicMock
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from llm_gateway import (
+    LLMGateway,
+    LLMRequest,
+    ProviderRegistry,
+    ProviderResponse,
+    RateLimitedError,
+    ResponseFormat,
+    TokenUsage,
+)
 
 from gmail_inbox_bot.classifier import (
     DEFAULT_MODEL,
@@ -10,25 +21,95 @@ from gmail_inbox_bot.classifier import (
     classify_email,
     generate_response,
 )
+from gmail_inbox_bot.llm_gateway_client import SynchronousLLMGateway
 
 
-def _mock_responses_response(content: str) -> MagicMock:
-    """Build a mock OpenAI Responses API response."""
-    resp = MagicMock()
-    resp.output_text = content
-    return resp
+def _response(
+    output: str,
+    *,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> ProviderResponse:
+    return ProviderResponse(
+        output_text=output,
+        usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+        finish_reason="stop",
+        model_used=None,
+    )
+
+
+class _ScriptedAdapter:
+    """Provider double at the gateway port; no SDK or network is involved."""
+
+    def __init__(self, name: str, outcomes: Iterable[ProviderResponse | Exception]) -> None:
+        self.name = name
+        self._outcomes = list(outcomes)
+        self.calls: list[str] = []
+        self.requests: list[LLMRequest] = []
+
+    async def generate(self, request: LLMRequest, *, model: str) -> ProviderResponse:
+        self.calls.append(model)
+        self.requests.append(request)
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class _SynchronousGatewayDouble:
+    """Test-side sync boundary with the same public port used by the bot."""
+
+    def __init__(
+        self,
+        *,
+        groq: Iterable[ProviderResponse | Exception] | None = None,
+        openai: Iterable[ProviderResponse | Exception] | None = None,
+    ) -> None:
+        self.registry = ProviderRegistry()
+        self.groq = _ScriptedAdapter("groq", groq) if groq is not None else None
+        self.openai = _ScriptedAdapter("openai", openai) if openai is not None else None
+        if self.groq is not None:
+            self.registry.register(self.groq, model_prefixes=("openai/gpt-oss-",))
+        if self.openai is not None:
+            self.registry.register(self.openai, model_prefixes=("gpt-",))
+        self.client = SynchronousLLMGateway(LLMGateway(registry=self.registry), self.registry)
+
+    @property
+    def provider_names(self) -> tuple[str, ...]:
+        return self.client.provider_names
+
+    def supports_model(self, model: str) -> bool:
+        return self.client.supports_model(model)
+
+    def generate(self, request: LLMRequest):
+        return self.client.generate(request)
+
+
+def _classification_client(
+    payload: str,
+    *,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> _SynchronousGatewayDouble:
+    return _SynchronousGatewayDouble(
+        groq=(
+            _response(
+                payload,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            ),
+        ),
+        openai=(),
+    )
 
 
 class TestClassifyEmail:
-    def test_valid_response_parsed(self):
-        expected = {
-            "idioma": "español",
-            "categoria": "coste_programa",
-            "razon_clasificacion": "Pregunta si es gratuito",
-            "ultimo_email": "Hola, ¿el programa es gratuito?",
-        }
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(json.dumps(expected))
+    def test_valid_response_preserves_public_shape(self):
+        client = _classification_client(
+            '{"idioma":"español","categoria":"coste_programa",'
+            '"razon_clasificacion":"Pregunta si es gratuito",'
+            '"ultimo_email":"Hola, ¿el programa es gratuito?"}'
+        )
 
         result = classify_email(
             client,
@@ -42,116 +123,70 @@ class TestClassifyEmail:
 
         assert result["categoria"] == "coste_programa"
         assert result["idioma"] == "español"
-        assert result["razon_clasificacion"] == expected["razon_clasificacion"]
+        assert result["razon_clasificacion"] == "Pregunta si es gratuito"
         assert result["model_used"] == DEFAULT_MODEL
 
-    def test_invalid_json_returns_none(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response("not valid json {{{")
-
-        result = classify_email(
-            client,
-            "system prompt",
-            "Test",
-            "body",
-            "Juan",
-            "juan@test.com",
-            False,
-        )
-
-        assert result is None
-
-    def test_openai_exception_returns_none(self):
-        client = MagicMock()
-        client.responses.create.side_effect = Exception("API timeout")
-
-        result = classify_email(
-            client,
-            "system prompt",
-            "Test",
-            "body",
-            "Juan",
-            "juan@test.com",
-            False,
-        )
-
-        assert result is None
-
-    def test_api_called_with_correct_params(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
-            '{"idioma":"español","categoria":"spam","razon_clasificacion":"","ultimo_email":""}'
+    def test_request_preserves_model_prompts_and_json_mode(self):
+        client = _classification_client(
+            '{"idioma":"español","categoria":"spam","razon_clasificacion":""}'
         )
 
         classify_email(
             client,
             "Mi system prompt",
-            "Asunto del email",
-            "Cuerpo del email",
+            "Mi asunto especial",
+            "Contenido del cuerpo",
             "María López",
             "maria@empresa.com",
             True,
             model=DEFAULT_MODEL,
         )
 
-        call_kwargs = client.responses.create.call_args[1]
-        assert call_kwargs["model"] == DEFAULT_MODEL
-        assert call_kwargs["instructions"] == "Mi system prompt"
-        assert call_kwargs["text"] == {
-            "format": {"type": "json_object"},
-        }
-
-    def test_user_prompt_contains_email_fields(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
-            '{"idioma":"español","categoria":"otros","razon_clasificacion":"","ultimo_email":""}'
-        )
-
-        classify_email(
-            client,
-            "system prompt",
-            "Mi asunto especial",
-            "Contenido del cuerpo",
-            "Pedro Ruiz",
-            "pedro@empresa.com",
-            True,
-        )
-
-        call_kwargs = client.responses.create.call_args[1]
-        input_messages = call_kwargs["input"]
-        assert input_messages[0]["role"] == "user"
-        # Extract text from input_text content block
-        user_text = input_messages[0]["content"][0]["text"]
+        request = client.groq.requests[0]
+        assert request.model == DEFAULT_MODEL
+        assert request.system_prompt == "Mi system prompt"
+        assert request.response_format is ResponseFormat.JSON_OBJECT
+        assert len(request.messages) == 1
+        user_text = request.messages[0].content
+        assert request.messages[0].role == "user"
         assert "Mi asunto especial" in user_text
         assert "Contenido del cuerpo" in user_text
-        assert "Pedro Ruiz" in user_text
-        assert "pedro@empresa.com" in user_text
-        assert "True" in user_text  # hasAttachments
+        assert "María López" in user_text
+        assert "maria@empresa.com" in user_text
+        assert "True" in user_text
 
-    def test_system_prompt_passed_as_instructions(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
-            '{"idioma":"español","categoria":"spam","razon_clasificacion":"","ultimo_email":""}'
-        )
+    def test_invalid_json_returns_none(self):
+        client = _classification_client("not valid json {{{")
 
-        classify_email(
+        result = classify_email(
             client,
-            "CUSTOM SYSTEM PROMPT HERE",
-            "s",
-            "b",
-            "n",
-            "e",
+            "system prompt",
+            "Test",
+            "body",
+            "Juan",
+            "juan@test.com",
             False,
         )
 
-        call_kwargs = client.responses.create.call_args[1]
-        assert call_kwargs["instructions"] == "CUSTOM SYSTEM PROMPT HERE"
+        assert result is None
+
+    def test_gateway_failure_returns_none(self):
+        client = _SynchronousGatewayDouble(groq=(RateLimitedError("API timeout"),))
+
+        result = classify_email(
+            client,
+            "system prompt",
+            "Test",
+            "body",
+            "Juan",
+            "juan@test.com",
+            False,
+        )
+
+        assert result is None
 
     def test_placeholder_reason_string_is_sanitized(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
-            '{"categoria":"finanzas","razon_clasificacion":"string"}'
-        )
+        client = _classification_client('{"categoria":"finanzas","razon_clasificacion":"string"}')
 
         result = classify_email(
             client,
@@ -167,8 +202,7 @@ class TestClassifyEmail:
         assert result["razon_clasificacion"] == ""
 
     def test_placeholder_reason_field_name_is_sanitized(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
+        client = _classification_client(
             '{"categoria":"personal","razon_clasificacion":"razon_clasificacion"}'
         )
 
@@ -186,8 +220,7 @@ class TestClassifyEmail:
         assert result["razon_clasificacion"] == ""
 
     def test_reason_prefix_is_removed(self):
-        client = MagicMock()
-        client.responses.create.return_value = _mock_responses_response(
+        client = _classification_client(
             '{"categoria":"finanzas","razon_clasificacion":'
             '"razon_clasificacion: Trata sobre un recordatorio de pago"}'
         )
@@ -205,17 +238,13 @@ class TestClassifyEmail:
         assert result["categoria"] == "finanzas"
         assert result["razon_clasificacion"] == "Trata sobre un recordatorio de pago"
 
-    def test_usage_and_cost_are_included_in_classification_result(self):
-        expected = {
-            "idioma": "español",
-            "categoria": "otros",
-            "razon_clasificacion": "Clasificacion general",
-            "ultimo_email": "Texto",
-        }
-        response = _mock_responses_response(json.dumps(expected))
-        response.usage = MagicMock(input_tokens=1200, output_tokens=300)
-        client = MagicMock()
-        client.responses.create.return_value = response
+    def test_usage_and_cost_preserve_metrics_shape(self):
+        client = _classification_client(
+            '{"idioma":"español","categoria":"otros",'
+            '"razon_clasificacion":"Clasificacion general","ultimo_email":"Texto"}',
+            input_tokens=1200,
+            output_tokens=300,
+        )
 
         result = classify_email(
             client,
@@ -242,14 +271,14 @@ class TestClassifyEmail:
 
 
 class TestProviderRoutingAndFallback:
-    def test_gpt_oss_model_is_routed_to_groq_client(self):
-        response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
-        groq_client = MagicMock(name="groq")
-        groq_client.responses.create.return_value = response
-        openai_client = MagicMock(name="openai")
+    def test_gpt_oss_model_is_routed_to_groq(self):
+        client = _SynchronousGatewayDouble(
+            groq=(_response('{"categoria":"otros","razon_clasificacion":""}'),),
+            openai=(),
+        )
 
         result = classify_email(
-            {"openai": openai_client, "groq": groq_client},
+            client,
             "system prompt",
             "s",
             "b",
@@ -259,18 +288,18 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
-        groq_client.responses.create.assert_called_once()
-        openai_client.responses.create.assert_not_called()
+        assert client.groq.calls == [GPT_OSS_120B]
+        assert client.openai.calls == []
         assert result["model_used"] == GPT_OSS_120B
 
-    def test_non_gpt_oss_model_is_routed_to_openai_client(self):
-        response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
-        openai_client = MagicMock(name="openai")
-        openai_client.responses.create.return_value = response
-        groq_client = MagicMock(name="groq")
+    def test_non_gpt_oss_model_is_routed_to_openai(self):
+        client = _SynchronousGatewayDouble(
+            groq=(),
+            openai=(_response('{"categoria":"otros","razon_clasificacion":""}'),),
+        )
 
         classify_email(
-            {"openai": openai_client, "groq": groq_client},
+            client,
             "system prompt",
             "s",
             "b",
@@ -280,18 +309,18 @@ class TestProviderRoutingAndFallback:
             model=GPT_5_LUNA,
         )
 
-        openai_client.responses.create.assert_called_once()
-        groq_client.responses.create.assert_not_called()
+        assert client.openai.calls == [GPT_5_LUNA]
+        assert client.groq.calls == []
+        assert client.openai.requests[0].reasoning_effort == "max"
 
     def test_groq_failure_falls_back_to_openai(self):
-        ok_response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
-        groq_client = MagicMock(name="groq")
-        groq_client.responses.create.side_effect = Exception("Groq 429 quota")
-        openai_client = MagicMock(name="openai")
-        openai_client.responses.create.return_value = ok_response
+        client = _SynchronousGatewayDouble(
+            groq=(RateLimitedError("Groq 429 quota"),),
+            openai=(_response('{"categoria":"otros","razon_clasificacion":""}'),),
+        )
 
         result = classify_email(
-            {"openai": openai_client, "groq": groq_client},
+            client,
             "system prompt",
             "s",
             "b",
@@ -301,19 +330,20 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
-        assert groq_client.responses.create.call_count == 1
-        assert openai_client.responses.create.call_count == 1
-        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_LUNA
+        assert client.groq.calls == [GPT_OSS_120B]
+        assert client.openai.calls == [GPT_5_LUNA]
+        assert client.groq.requests[0].reasoning_effort is None
+        assert client.openai.requests[0].reasoning_effort is None
         assert result["model_used"] == GPT_5_LUNA
 
     def test_both_providers_fail_returns_none(self):
-        groq_client = MagicMock(name="groq")
-        groq_client.responses.create.side_effect = Exception("Groq down")
-        openai_client = MagicMock(name="openai")
-        openai_client.responses.create.side_effect = Exception("OpenAI down")
+        client = _SynchronousGatewayDouble(
+            groq=(RateLimitedError("Groq down"),),
+            openai=(RateLimitedError("OpenAI down"),),
+        )
 
         result = classify_email(
-            {"openai": openai_client, "groq": groq_client},
+            client,
             "system prompt",
             "s",
             "b",
@@ -323,15 +353,18 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
+        assert client.groq.calls == [GPT_OSS_120B]
+        assert client.openai.calls == [GPT_5_LUNA]
         assert result is None
 
-    def test_missing_groq_client_falls_back_to_openai(self):
-        ok_response = _mock_responses_response('{"categoria":"otros","razon_clasificacion":""}')
-        openai_client = MagicMock(name="openai")
-        openai_client.responses.create.return_value = ok_response
+    def test_missing_groq_client_starts_with_openai_fallback(self):
+        client = _SynchronousGatewayDouble(
+            groq=None,
+            openai=(_response('{"categoria":"otros","razon_clasificacion":""}'),),
+        )
 
         result = classify_email(
-            {"openai": openai_client, "groq": None},
+            client,
             "system prompt",
             "s",
             "b",
@@ -341,16 +374,16 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
-        assert openai_client.responses.create.call_args.kwargs["model"] == GPT_5_LUNA
+        assert client.openai.calls == [GPT_5_LUNA]
         assert result["model_used"] == GPT_5_LUNA
 
 
 class TestGenerateResponse:
-    def test_usage_and_cost_are_returned_with_generated_text(self):
-        response = _mock_responses_response("Respuesta generada")
-        response.usage = MagicMock(input_tokens=1000, output_tokens=250)
-        client = MagicMock()
-        client.responses.create.return_value = response
+    def test_text_result_preserves_public_shape_and_metrics(self):
+        client = _SynchronousGatewayDouble(
+            groq=(_response("Respuesta generada", input_tokens=1000, output_tokens=250),),
+            openai=(),
+        )
 
         result = generate_response(
             client,
@@ -375,3 +408,14 @@ class TestGenerateResponse:
                 "provider": "Groq",
             },
         }
+        request = client.groq.requests[0]
+        assert request.system_prompt == "system prompt"
+        assert request.response_format is ResponseFormat.TEXT
+        assert request.messages[0].content == "Remitente: Juan\n\nEmail:\nbody"
+
+    def test_failure_returns_none(self):
+        client = _SynchronousGatewayDouble(groq=(RateLimitedError("Groq down"),))
+
+        result = generate_response(client, "system prompt", "body", "Juan")
+
+        assert result is None

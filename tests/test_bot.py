@@ -112,18 +112,35 @@ class TestBuildGmailClient:
 
 
 class TestBuildLlmClients:
-    @patch("gmail_inbox_bot.bot.OpenAI")
-    def test_builds_openai_and_groq_clients(self, mock_openai, env):
-        _build_llm_clients(env)
+    def test_builds_official_adapters_with_explicit_app_credentials(self, monkeypatch, env):
+        captured: dict[str, str] = {}
 
-        assert mock_openai.call_count == 2
-        first_call = mock_openai.call_args_list[0]
-        second_call = mock_openai.call_args_list[1]
-        assert first_call.kwargs == {"api_key": "sk-test"}
-        assert second_call.kwargs == {
-            "base_url": "https://api.groq.com/openai/v1",
-            "api_key": "gsk-test",
-        }
+        def fake_openai_factory(*, api_key: str):
+            captured["openai"] = api_key
+            return MagicMock(name="async-openai")
+
+        def fake_groq_factory(*, api_key: str):
+            captured["groq"] = api_key
+            return MagicMock(name="async-groq")
+
+        monkeypatch.setattr(
+            "gmail_inbox_bot.bot.create_openai_client", fake_openai_factory, raising=False
+        )
+        monkeypatch.setattr(
+            "gmail_inbox_bot.bot.create_groq_client", fake_groq_factory, raising=False
+        )
+
+        client = _build_llm_clients(env)
+
+        assert captured == {"openai": "sk-test", "groq": "gsk-test"}
+        assert client.provider_names == ("groq", "openai")
+        assert callable(client.generate)
+
+    def test_no_credentials_returns_no_client(self, env):
+        env["OPENAI_API_KEY"] = ""
+        env["GROQ_API_KEY"] = ""
+
+        assert _build_llm_clients(env) is None
 
 
 # ------------------------------------------------------------------

@@ -5,12 +5,14 @@ from __future__ import annotations
 import os
 import time
 
-from openai import OpenAI
+from llm_gateway import LLMGateway
+from llm_gateway.factories import build_registry, create_groq_client, create_openai_client
 
 from .actions import already_processed, execute
 from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
+from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 from .mail_processing import (
     _is_forwarded_email,
@@ -23,7 +25,6 @@ from .notifications import NOTIFY_CATEGORIES, notify_important_email
 from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 
 def _build_gmail_client(
@@ -57,22 +58,22 @@ def _build_gmail_client(
     )
 
 
-def _build_llm_clients(env: dict[str, str]) -> dict[str, OpenAI | None]:
-    clients: dict[str, OpenAI | None] = {"openai": None, "groq": None}
-
+def _build_llm_clients(env: dict[str, str]) -> SynchronousLLMGateway | None:
     openai_api_key = env.get("OPENAI_API_KEY")
-    if openai_api_key:
-        clients["openai"] = OpenAI(api_key=openai_api_key)
-    else:
+    openai_client = create_openai_client(api_key=openai_api_key) if openai_api_key else None
+    if openai_client is None:
         log.warning("OPENAI_API_KEY not set")
 
     groq_api_key = env.get("GROQ_API_KEY")
-    if groq_api_key:
-        clients["groq"] = OpenAI(base_url=GROQ_BASE_URL, api_key=groq_api_key)
-    else:
+    groq_client = create_groq_client(api_key=groq_api_key) if groq_api_key else None
+    if groq_client is None:
         log.warning("GROQ_API_KEY not set")
 
-    return clients
+    if openai_client is None and groq_client is None:
+        return None
+
+    registry = build_registry(openai_client=openai_client, groq_client=groq_client)
+    return SynchronousLLMGateway(LLMGateway(registry=registry), registry)
 
 
 def _has_llm_client(client_or_clients) -> bool:
@@ -98,7 +99,7 @@ def _enrich_forwarded(email_msg: dict, config: dict) -> None:
 
 def _process_email(
     gmail: GmailClient,
-    openai_client: OpenAI | None,
+    openai_client: SynchronousLLMGateway | None,
     config: dict,
     email_msg: dict,
     *,
@@ -262,7 +263,7 @@ def _process_email(
 
 def process_mailbox(
     gmail: GmailClient,
-    openai_client: OpenAI | None,
+    openai_client: SynchronousLLMGateway | None,
     config: dict,
     *,
     dry_run: bool = False,

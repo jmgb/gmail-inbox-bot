@@ -383,6 +383,8 @@ Cuando el flujo básico funcione:
 2. Revisar parser de reenviados con muestras reales de Gmail
 3. Añadir fixtures de mensajes Gmail reales anonimizados
 4. Mejorar `.env.example`
+5. Cuando el gateway permita esfuerzo por modelo de fallback, restaurar `max` en Luna al degradar
+   desde Groq sin cambiar el esfuerzo del camino primario.
 
 ### Prioridad baja
 

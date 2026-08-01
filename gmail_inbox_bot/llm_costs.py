@@ -1,179 +1,62 @@
-"""LLM usage extraction and cost calculation helpers."""
+"""Adapt neutral gateway usage/cost metadata to the bot's legacy metric shape."""
 
 from __future__ import annotations
 
-from typing import TypedDict
+from decimal import Decimal
+
+from llm_gateway import LLMResult, lookup_model
+
+_USD_PER_MTOK = Decimal(1_000_000)
+_PROVIDER_LABELS = {"groq": "Groq", "openai": "OpenAI"}
 
 
-class ModelPrice(TypedDict):
-    """Price per million tokens."""
-
-    input: float
-    output: float
-    provider: str
-
-
-MODEL_PRICING: dict[str, ModelPrice] = {
-    "gpt-5.1-2025-11-13": {"input": 1.25, "output": 10.00, "provider": "OpenAI"},
-    "gpt-5.2-2025-12-11": {"input": 1.75, "output": 14.00, "provider": "OpenAI"},
-    "gpt-5.6-sol": {"input": 5.00, "output": 30.00, "provider": "OpenAI"},
-    "gpt-5.6-terra": {"input": 2.50, "output": 15.00, "provider": "OpenAI"},
-    "gpt-5.6-luna": {"input": 1.00, "output": 6.00, "provider": "OpenAI"},
-    "gpt-realtime-2025-08-28": {"input": 32.00, "output": 64.00, "provider": "OpenAI"},
-    "gpt-realtime-mini-2025-10-06": {
-        "input": 10.00,
-        "output": 20.00,
-        "provider": "OpenAI",
-    },
-    "gpt-realtime-mini-2025-12-15": {
-        "input": 10.00,
-        "output": 20.00,
-        "provider": "OpenAI",
-    },
-    "gpt-realtime-1.5-2026-02-25": {
-        "input": 32.00,
-        "output": 64.00,
-        "provider": "OpenAI",
-    },
-    "openai/gpt-oss-120b": {"input": 0.15, "output": 0.60, "provider": "Groq"},
-    "openai/gpt-oss-20b": {"input": 0.075, "output": 0.30, "provider": "Groq"},
-    "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00, "provider": "Google"},
-    "gemini-3-pro-preview": {"input": 2.00, "output": 12.00, "provider": "Google"},
-    "gemini-pro-latest": {"input": 2.00, "output": 12.00, "provider": "Google"},
-    "gemini-flash-latest": {"input": 1.50, "output": 9.00, "provider": "Google"},
-    "gemini-flash-lite-latest": {"input": 0.25, "output": 1.50, "provider": "Google"},
-    "gemini-3.5-flash": {"input": 1.50, "output": 9.00, "provider": "Google"},
-    "gemini-3.6-flash": {"input": 1.50, "output": 7.50, "provider": "Google"},
-    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50, "provider": "Google"},
-    "gemini-3.1-flash-lite-image": {"input": 0.25, "output": 1.50, "provider": "Google"},
-    "gemini-3.1-flash-image": {"input": 0.50, "output": 3.00, "provider": "Google"},
-    "gemini-3-pro-image": {"input": 2.00, "output": 12.00, "provider": "Google"},
-    "gemini-3.1-flash-image-preview": {"input": 0.50, "output": 3.00, "provider": "Google"},
-    "gemini-3-flash-preview": {"input": 0.50, "output": 3.00, "provider": "Google"},
-    "gemini-2.5-flash": {"input": 0.30, "output": 2.50, "provider": "Google"},
-    "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40, "provider": "Google"},
-    # gemini-3.1-flash-lite-preview: official Google rate (text/image/video share).
-    "gemini-3.1-flash-lite-preview": {"input": 0.25, "output": 1.50, "provider": "Google"},
-    "gemini-2.5-flash-image": {"input": 0.30, "output": 2.50, "provider": "Google"},
-    "google/gemini-2.5-flash-lite": {
-        "input": 0.10,
-        "output": 0.40,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3.1-flash-lite-preview": {
-        "input": 0.25,
-        "output": 1.50,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3.1-pro-preview": {
-        "input": 2.00,
-        "output": 12.00,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3-pro-preview": {
-        "input": 2.00,
-        "output": 12.00,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3-flash-preview": {
-        "input": 0.50,
-        "output": 3.00,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3.1-flash-image": {"input": 0.50, "output": 3.00, "provider": "OpenRouter"},
-    "google/gemini-2.5-flash-image": {"input": 0.30, "output": 2.50, "provider": "OpenRouter"},
-    "google/gemini-3.5-flash": {
-        "input": 1.50,
-        "output": 9.00,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3.6-flash": {
-        "input": 1.50,
-        "output": 7.50,
-        "provider": "OpenRouter",
-    },
-    "google/gemini-3.5-flash-lite": {
-        "input": 0.30,
-        "output": 2.50,
-        "provider": "OpenRouter",
-    },
-    "deepseek/deepseek-chat-v3.1": {
-        "input": 0.28,
-        "output": 0.42,
-        "provider": "OpenRouter",
-    },
-    "deepseek/deepseek-r1-distill-qwen-7b": {
-        "input": 0.55,
-        "output": 2.19,
-        "provider": "OpenRouter",
-    },
-    "moonshotai/kimi-k2-thinking": {
-        "input": 0.50,
-        "output": 1.50,
-        "provider": "OpenRouter",
-    },
-}
+def _split_attempt_cost(result: LLMResult) -> tuple[Decimal, Decimal] | None:
+    input_cost = Decimal(0)
+    output_cost = Decimal(0)
+    priced = False
+    for attempt in result.execution.attempts:
+        model = lookup_model(attempt.model)
+        if model is None:
+            continue
+        if attempt.usage.input_tokens is not None:
+            input_cost += (
+                Decimal(attempt.usage.input_tokens) * model.input_usd_per_mtok / _USD_PER_MTOK
+            )
+            priced = True
+        if attempt.usage.output_tokens is not None:
+            output_cost += (
+                Decimal(attempt.usage.output_tokens) * model.output_usd_per_mtok / _USD_PER_MTOK
+            )
+            priced = True
+    return (input_cost, output_cost) if priced else None
 
 
-def _get_token_value(obj: object, *keys: str) -> int:
-    for key in keys:
-        if isinstance(obj, dict):
-            value = obj.get(key)
-        else:
-            value = getattr(obj, key, None)
-        if isinstance(value, int):
-            return value
-    return 0
-
-
-def extract_usage_data(response: object) -> dict[str, int] | None:
-    usage = getattr(response, "usage", None)
-    if usage is None and isinstance(response, dict):
-        usage = response.get("usage")
-    if not usage:
+def build_cost_metadata(result: LLMResult) -> dict[str, dict] | None:
+    usage = result.usage
+    if usage.input_tokens is None and usage.output_tokens is None:
         return None
 
-    input_tokens = _get_token_value(usage, "input_tokens", "prompt_tokens", "prompt_token_count")
-    output_tokens = _get_token_value(
-        usage, "output_tokens", "completion_tokens", "candidates_token_count"
-    )
-    total_tokens = _get_token_value(usage, "total_tokens") or (input_tokens + output_tokens)
-
-    if input_tokens == 0 and output_tokens == 0 and total_tokens == 0:
-        return None
-
-    return {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
+    input_tokens = usage.input_tokens or 0
+    output_tokens = usage.output_tokens or 0
+    metadata: dict[str, dict] = {
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
     }
 
+    split = _split_attempt_cost(result)
+    if split is None or result.cost.amount_usd is None:
+        return metadata
 
-def calculate_cost(
-    model_id: str, input_tokens: int, output_tokens: int
-) -> dict[str, float | str] | None:
-    pricing = MODEL_PRICING.get(model_id)
-    if not pricing:
-        return None
-
-    input_cost = (input_tokens / 1_000_000) * pricing["input"]
-    output_cost = (output_tokens / 1_000_000) * pricing["output"]
-    total_cost = input_cost + output_cost
-    return {
-        "input_cost_usd": round(input_cost, 6),
-        "output_cost_usd": round(output_cost, 6),
-        "total_cost_usd": round(total_cost, 6),
-        "provider": pricing["provider"],
+    input_cost, output_cost = split
+    metadata["cost"] = {
+        "input_cost_usd": round(float(input_cost), 6),
+        "output_cost_usd": round(float(output_cost), 6),
+        "total_cost_usd": float(result.cost.amount_usd),
+        "provider": _PROVIDER_LABELS.get(
+            result.execution.provider, result.execution.provider.title()
+        ),
     }
-
-
-def build_cost_metadata(model_id: str, response: object) -> dict[str, dict] | None:
-    usage = extract_usage_data(response)
-    if not usage:
-        return None
-
-    cost = calculate_cost(model_id, usage["input_tokens"], usage["output_tokens"])
-    result = {"usage": usage}
-    if cost:
-        result["cost"] = cost
-    return result
+    return metadata

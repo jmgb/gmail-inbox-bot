@@ -18,7 +18,7 @@ def load_env() -> dict[str, str]:
 
     Per-account credentials (refresh token, email, send_as, query) live in
     each mailbox YAML config, not here.  The .env only holds secrets shared
-    across all mailboxes (OAuth client, OpenAI key, etc.).
+    across all mailboxes (OAuth client, LLM provider keys, etc.).
     """
     load_dotenv()
     required = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]

@@ -9,7 +9,7 @@ uso personal o single-user.
 
 - Entrada: **Cloudflare Email Routing -> Gmail inbox**
 - Automatización: **Gmail API**
-- Clasificación: **OpenAI**
+- Clasificación: **neutral-llm-gateway** con adapters oficiales de Groq/OpenAI
 - Fuente de verdad: **Gmail**, no una base de datos externa
 
 ## Cuentas Gmail conectadas

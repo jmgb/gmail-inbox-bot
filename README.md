@@ -149,12 +149,23 @@ borrador, nunca en emails enviados).
 
 ## Clasificador (LLM)
 
-`classifier.py` usa la **Responses API** de OpenAI con salida `json_object`. El prompt vive en
+`classifier.py` usa `neutral-llm-gateway==0.9.0` con salida `json_object`. El bot conserva su API
+síncrona mediante `llm_gateway_client.py`; por debajo, el gateway usa los adapters async oficiales
+de Groq y OpenAI. Las credenciales las lee la aplicación y las entrega explícitamente a las
+factorías del paquete; el gateway no lee el entorno. El prompt vive en
 `gmail_inbox_bot/prompts/clasificador_inbox.txt` (referenciado por `classifier.prompt_file`).
 
 - **Modelo por defecto**: `openai/gpt-oss-120b` vía **Groq** (`GROQ_API_KEY`).
 - **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.6-luna` vía
   **OpenAI** (`OPENAI_API_KEY`).
+- **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
+  con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
+- **Salida inválida**: JSON ilegible también activa el fallback y queda contabilizado como intento.
+- **Razonamiento**: Luna usa `max` cuando es el modelo primario efectivo. Si la llamada empieza en
+  Groq, no se fuerza esfuerzo para no encarecer el camino normal; v0.9.0 no permite aplicar `max`
+  solo al modelo de fallback, por lo que Luna hereda el esfuerzo vacío en esa degradación puntual.
+- **Costes**: `llm_costs.py` conserva el formato legado de métricas (split entrada/salida), pero
+  modelos, proveedores y tarifas proceden del catálogo versionado del gateway.
 - **Override por cuenta**: `classifier.model` en el YAML.
 
 El prompt tiene dos bloques: **reglas generales** (definiciones de categoría) y **reglas aprendidas de
@@ -496,13 +507,14 @@ gmail_inbox_bot/
   gmail_client.py      # cliente Gmail API (leer, labels, responder, enviar)
   calendar_client.py   # cliente Google Calendar API (eventos del día)
   calendar_reminders.py# filtrado, render, estado/idempotencia, scheduler, CLI
-  classifier.py        # clasificación y respuesta dinámica (OpenAI/Groq)
+  classifier.py        # clasificación y respuesta dinámica (contrato neutral)
+  llm_gateway_client.py# borde sync sobre el gateway async
   actions.py           # router de acciones (tag/move/reply/forward/…)
   mail_processing.py   # pre-filtros, detección de reenvíos, strip_html
   notifications.py     # avisos de email importante (Telegram)
   ib_trades.py         # parser de trades de Interactive Brokers
   metrics.py           # métricas a Supabase (fire-and-forget)
-  llm_costs.py         # cálculo de coste por tokens
+  llm_costs.py         # adapta uso/coste del gateway a métricas legadas
   telegram.py          # envío de mensajes a Telegram
   admin_dashboard.py   # UI de métricas (/admin/dashboard)
   admin_logs.py        # visor de logs (/admin/logs)

@@ -346,7 +346,7 @@ def _handle_dynamic_reply(
         _sender = email_msg.get("from", {}).get("emailAddress", {}).get("address", "?")
         _received = email_msg.get("receivedDateTime", "?")
         log.error(
-            "[%s] dynamic_reply: OpenAI devolvió respuesta vacía — De: %s | Asunto: %s | Fecha: %s",
+            "[%s] dynamic_reply: el LLM devolvió respuesta vacía — De: %s | Asunto: %s | Fecha: %s",
             user_email,
             _sender,
             _subj,

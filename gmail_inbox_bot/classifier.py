@@ -1,11 +1,12 @@
-"""Email classifier using OpenAI Responses API."""
+"""Email classification and reply generation through the neutral LLM gateway."""
 
 import json
 from pathlib import Path
 
-from openai import OpenAI
+from llm_gateway import FallbackPolicy, LLMRequest, Message, ResponseFormat, RetryPolicy
 
 from .llm_costs import build_cost_metadata
+from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.classifier", "logs/app.log")
@@ -26,54 +27,37 @@ def load_prompt(prompt_file: str) -> str:
     return Path(prompt_file).read_text(encoding="utf-8")
 
 
-def _select_client(client_or_clients, model: str):
-    """Return the provider client for ``model``, or the single client passed."""
-    if not isinstance(client_or_clients, dict):
-        return client_or_clients
+def _available_model_plan(
+    client: SynchronousLLMGateway, requested_model: str
+) -> tuple[str, tuple[str, ...]]:
+    fallback = FALLBACK_MODEL_MAP.get(requested_model)
+    candidates = (requested_model, *((fallback,) if fallback else ()))
+    available = tuple(model for model in candidates if client.supports_model(model))
+    if not available:
+        raise RuntimeError(f"No LLM client available for model={requested_model}")
+    return available[0], available[1:]
 
-    if model.startswith("openai/gpt-oss-"):
-        return client_or_clients.get("groq")
 
-    return client_or_clients.get("openai")
-
-
-def _create_response_with_fallback(client_or_clients, *, model: str, **kwargs):
-    """Ejecuta la Responses API y reintenta una vez con el modelo de fallback."""
-    attempted: list[str] = []
-    current_model = model
-    last_exc: Exception | None = None
-
-    while current_model and current_model not in attempted:
-        attempted.append(current_model)
-        client = _select_client(client_or_clients, current_model)
-        if client is None:
-            log.warning("No LLM client available for model=%s", current_model)
-            current_model = FALLBACK_MODEL_MAP.get(current_model)
-            continue
-
-        try:
-            call_kwargs = dict(kwargs)
-            if current_model == GPT_5_LUNA:
-                call_kwargs["reasoning"] = {"effort": "max"}
-            response = client.responses.create(model=current_model, **call_kwargs)
-            return current_model, response
-        except Exception as exc:
-            fallback_model = FALLBACK_MODEL_MAP.get(current_model)
-            if fallback_model and fallback_model not in attempted:
-                log.warning(
-                    "LLM request failed for model=%s (%s). Retrying with fallback model=%s",
-                    current_model,
-                    type(exc).__name__,
-                    fallback_model,
-                )
-                last_exc = exc
-                current_model = fallback_model
-                continue
-            raise
-
-    if last_exc:
-        raise last_exc
-    raise RuntimeError(f"No LLM client available for model={model}")
+def _request(
+    client: SynchronousLLMGateway,
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: str,
+    response_format: ResponseFormat,
+    source: str,
+) -> LLMRequest:
+    primary_model, fallback_models = _available_model_plan(client, model)
+    return LLMRequest(
+        model=primary_model,
+        system_prompt=system_prompt,
+        messages=(Message(role="user", content=user_content),),
+        response_format=response_format,
+        reasoning_effort="max" if primary_model == GPT_5_LUNA else None,
+        retry_policy=RetryPolicy.disabled(),
+        fallback_policy=FallbackPolicy.models_in_order(*fallback_models),
+        source=source,
+    )
 
 
 def _sanitize_reason(value: object) -> str:
@@ -96,7 +80,7 @@ def _sanitize_reason(value: object) -> str:
 
 
 def classify_email(
-    client: OpenAI,
+    client: SynchronousLLMGateway,
     system_prompt: str,
     subject: str,
     body_text: str,
@@ -114,27 +98,22 @@ def classify_email(
     )
 
     try:
-        used_model, resp = _create_response_with_fallback(
+        request = _request(
             client,
             model=model,
-            instructions=system_prompt,
-            input=[
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": user_content}],
-                },
-            ],
-            text={
-                "format": {"type": "json_object"},
-            },
+            system_prompt=system_prompt,
+            user_content=user_content,
+            response_format=ResponseFormat.JSON_OBJECT,
+            source="email_classification",
         )
-        result = json.loads(resp.output_text)
+        response = client.generate(request)
+        result = dict(response.output)
         categoria = result.get("categoria", "")
         idioma = result.get("idioma", "")
         razon = _sanitize_reason(result.get("razon_clasificacion", ""))
         result["razon_clasificacion"] = razon
-        result["model_used"] = used_model
-        metadata = build_cost_metadata(used_model, resp)
+        result["model_used"] = response.execution.model_used
+        metadata = build_cost_metadata(response)
         if metadata:
             result.update(metadata)
         log.info(
@@ -156,29 +135,27 @@ def classify_email(
 
 
 def generate_response(
-    client: OpenAI,
+    client: SynchronousLLMGateway,
     system_prompt: str,
     email_text: str,
     sender_name: str,
     model: str = DEFAULT_MODEL,
 ) -> dict | None:
-    """Generate a free-text reply using OpenAI (for dynamic_reply action)."""
+    """Generate a free-text reply through the configured LLM cascade."""
     user_content = f"Remitente: {sender_name}\n\nEmail:\n{email_text}"
     try:
-        used_model, resp = _create_response_with_fallback(
+        request = _request(
             client,
             model=model,
-            instructions=system_prompt,
-            input=[
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": user_content}],
-                },
-            ],
+            system_prompt=system_prompt,
+            user_content=user_content,
+            response_format=ResponseFormat.TEXT,
+            source="dynamic_reply",
         )
-        text = resp.output_text.strip()
-        result = {"text": text, "model_used": used_model}
-        metadata = build_cost_metadata(used_model, resp)
+        response = client.generate(request)
+        text = response.text.strip()
+        result = {"text": text, "model_used": response.execution.model_used}
+        metadata = build_cost_metadata(response)
         if metadata:
             result.update(metadata)
         log.info(
