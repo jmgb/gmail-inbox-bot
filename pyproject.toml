@@ -10,7 +10,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2.2",
     "httpx>=0.28.0",
     "jinja2>=3.1.0",
-    "neutral-llm-gateway[groq,openai]==0.9.0",
+    "neutral-llm-gateway[groq,openai]==0.10.1",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
     "pyyaml>=6.0",

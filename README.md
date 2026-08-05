@@ -149,7 +149,7 @@ borrador, nunca en emails enviados).
 
 ## Clasificador (LLM)
 
-`classifier.py` usa `neutral-llm-gateway==0.9.0` con salida `json_object`. El bot conserva su API
+`classifier.py` usa `neutral-llm-gateway==0.10.1` con salida `json_object`. El bot conserva su API
 síncrona mediante `llm_gateway_client.py`; por debajo, el gateway usa los adapters async oficiales
 de Groq y OpenAI. Las credenciales las lee la aplicación y las entrega explícitamente a las
 factorías del paquete; el gateway no lee el entorno. El prompt vive en
@@ -162,7 +162,7 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
 - **Salida inválida**: JSON ilegible también activa el fallback y queda contabilizado como intento.
 - **Razonamiento**: Luna usa `max` cuando es el modelo primario efectivo. Si la llamada empieza en
-  Groq, no se fuerza esfuerzo para no encarecer el camino normal; v0.9.0 no permite aplicar `max`
+  Groq, no se fuerza esfuerzo para no encarecer el camino normal; el paquete no permite aplicar `max`
   solo al modelo de fallback, por lo que Luna hereda el esfuerzo vacío en esa degradación puntual.
 - **Costes**: `llm_costs.py` conserva el formato legado de métricas (split entrada/salida), pero
   modelos, proveedores y tarifas proceden del catálogo versionado del gateway.
