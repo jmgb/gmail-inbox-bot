@@ -149,7 +149,7 @@ borrador, nunca en emails enviados).
 
 ## Clasificador (LLM)
 
-`classifier.py` usa `neutral-llm-gateway==0.10.1` con salida `json_object`. El bot conserva su API
+`classifier.py` usa `neutral-llm-gateway==0.12.0` con salida `json_object`. El bot conserva su API
 síncrona mediante `llm_gateway_client.py`; por debajo, el gateway usa los adapters async oficiales
 de Groq y OpenAI. Las credenciales las lee la aplicación y las entrega explícitamente a las
 factorías del paquete; el gateway no lee el entorno. El prompt vive en
