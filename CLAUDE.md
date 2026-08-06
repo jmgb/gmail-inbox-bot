@@ -208,3 +208,8 @@ Tras una feature/cambio **relevante**, lanzar automáticamente `/codex:review --
 **Si hay hallazgos serios**: `/codex:rescue --resume "aplica los fixes propuestos"` antes de commit.
 
 **Features grandes con commits incrementales**: una sola review al cerrar la feature con `--scope branch --base main`; los fixes van en un commit final "address codex review" antes del push.
+
+## Reglas transversales
+
+- Puede haber varias sesiones de agentes trabajando a la vez en este repo: comprueba `git status` y que el HEAD es tuyo antes de stagear, commitear o reescribir historia.
+- Aplica siempre KISS: la solución más pequeña y simple que resuelva el caso actual.
