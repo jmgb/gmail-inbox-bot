@@ -11,7 +11,7 @@ import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import httpx
+import httpx2
 
 from .logger import setup_logger
 
@@ -46,7 +46,7 @@ class CalendarClient:
         self.user_email = user_email
 
         self._access_token: str | None = None
-        self._http = httpx.Client(timeout=30.0)
+        self._http = httpx2.Client(timeout=30.0)
 
     # ------------------------------------------------------------------
     # Auth
@@ -80,7 +80,7 @@ class CalendarClient:
         _retries: int = 3,
         _backoff: float = 1.0,
         **kwargs,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """Authenticated request: refresh on 401, retry on 5xx with backoff."""
         url = f"{BASE_URL}{path}" if path.startswith("/") else path
         resp = self._http.request(method, url, headers=self._headers(), **kwargs)

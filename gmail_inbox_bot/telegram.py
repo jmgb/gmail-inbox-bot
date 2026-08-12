@@ -1,4 +1,4 @@
-"""Telegram transport — send messages with chunking and retries (httpx-based)."""
+"""Telegram transport — send messages with chunking and retries (httpx2-based)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 import re
 import time
 
-import httpx
+import httpx2
 
 log = logging.getLogger("gmail_inbox_bot.telegram")
 
@@ -61,7 +61,7 @@ def _split_message(escaped: str) -> list[str]:
     return parts
 
 
-def _retry_delay(attempt: int, response: httpx.Response | None = None) -> int:
+def _retry_delay(attempt: int, response: httpx2.Response | None = None) -> int:
     if response is not None and response.status_code == 429:
         try:
             retry_after = response.json().get("parameters", {}).get("retry_after")
@@ -83,8 +83,8 @@ def _send_chunk(
     last_error = "Unknown error"
     for attempt in range(1, max_attempts + 1):
         try:
-            resp = httpx.post(url, json=payload, timeout=10)
-        except httpx.HTTPError as exc:
+            resp = httpx2.post(url, json=payload, timeout=10)
+        except httpx2.HTTPError as exc:
             last_error = str(exc)
             if attempt == max_attempts:
                 return False, last_error

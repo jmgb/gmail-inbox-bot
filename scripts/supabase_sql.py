@@ -11,7 +11,7 @@ Requires SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF in .env
 import os
 import sys
 
-import httpx
+import httpx2
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,7 +25,7 @@ def execute_sql(sql: str) -> None:
         print("Error: SUPABASE_ACCESS_TOKEN y SUPABASE_PROJECT_REF requeridos en .env")
         sys.exit(1)
 
-    resp = httpx.post(
+    resp = httpx2.post(
         f"https://api.supabase.com/v1/projects/{ref}/database/query",
         json={"query": sql},
         headers={

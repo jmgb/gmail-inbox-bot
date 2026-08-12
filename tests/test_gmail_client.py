@@ -75,7 +75,7 @@ def client():
 
 @pytest.fixture
 def mock_http(client):
-    """Replace the internal httpx client with a mock."""
+    """Replace the internal httpx2 client with a mock."""
     mock = MagicMock()
     client._http = mock
     client._access_token = "fake-token"

@@ -12,7 +12,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-import httpx
+import httpx2
 
 SCOPE = " ".join(
     [
@@ -80,7 +80,7 @@ def main() -> None:
         sys.exit(1)
 
     # Step 2: Exchange code for tokens
-    resp = httpx.post(
+    resp = httpx2.post(
         "https://oauth2.googleapis.com/token",
         data={
             "code": code,
@@ -104,7 +104,7 @@ def main() -> None:
         sys.exit(1)
 
     # Get account email
-    profile = httpx.get(
+    profile = httpx2.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/profile",
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
     ).json()

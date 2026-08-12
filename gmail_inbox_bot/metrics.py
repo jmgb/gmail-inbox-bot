@@ -15,7 +15,7 @@ SUPABASE_TABLE = "email_metrics"
 
 def _supabase_upsert(payload: dict) -> None:
     """Upsert via Supabase REST API. On msg_id conflict, updates the row."""
-    import httpx
+    import httpx2
 
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_SECRET_KEY", "")
@@ -35,7 +35,7 @@ def _supabase_upsert(payload: dict) -> None:
     if payload.get("msg_id"):
         params["on_conflict"] = "msg_id"
 
-    resp = httpx.post(endpoint, json=payload, headers=headers, params=params, timeout=5)
+    resp = httpx2.post(endpoint, json=payload, headers=headers, params=params, timeout=5)
     resp.raise_for_status()
 
 

@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 
 from gmail_inbox_bot.telegram import (
     _retry_delay,
@@ -67,14 +67,14 @@ class TestRetryDelay:
 
 
 class TestSendChunk:
-    @patch("gmail_inbox_bot.telegram.httpx.post")
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
     def test_success(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200)
         ok, err = _send_chunk(url="http://x", payload={}, referencia="test", max_attempts=1)
         assert ok is True
         assert err == ""
 
-    @patch("gmail_inbox_bot.telegram.httpx.post")
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
     def test_non_retryable_error(self, mock_post):
         resp = MagicMock(status_code=400, text="bad request")
         resp.json.return_value = {"description": "bad request"}
@@ -84,7 +84,7 @@ class TestSendChunk:
         mock_post.assert_called_once()
 
     @patch("gmail_inbox_bot.telegram.time.sleep")
-    @patch("gmail_inbox_bot.telegram.httpx.post")
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
     def test_retryable_error_retries(self, mock_post, mock_sleep):
         fail = MagicMock(status_code=500, text="error")
         fail.json.return_value = {"description": "error"}
@@ -94,9 +94,9 @@ class TestSendChunk:
         assert ok is True
         assert mock_post.call_count == 2
 
-    @patch("gmail_inbox_bot.telegram.httpx.post")
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
     def test_network_error(self, mock_post):
-        mock_post.side_effect = httpx.ConnectError("timeout")
+        mock_post.side_effect = httpx2.ConnectError("timeout")
         ok, err = _send_chunk(url="http://x", payload={}, referencia="test", max_attempts=1)
         assert ok is False
         assert "timeout" in err

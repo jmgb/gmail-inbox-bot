@@ -17,7 +17,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
-import httpx
+import httpx2
 
 from .attachment_archive import decode_gmail_raw
 from .logger import setup_logger
@@ -67,7 +67,7 @@ class GmailClient:
         self._request_retries = request_retries
 
         self._access_token: str | None = None
-        self._http = httpx.Client(timeout=30.0)
+        self._http = httpx2.Client(timeout=30.0)
         # name -> id cache; populated lazily
         self._label_cache: dict[str, str] = {}
 
@@ -103,7 +103,7 @@ class GmailClient:
         _retries: int | None = None,
         _backoff: float = 1.0,
         **kwargs,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """Make an authenticated request with throttling and bounded retries.
 
         A 401 refreshes the OAuth token once.  Transient server failures and
@@ -147,7 +147,7 @@ class GmailClient:
         return resp
 
     @staticmethod
-    def _is_retryable_response(resp: httpx.Response) -> bool:
+    def _is_retryable_response(resp: httpx2.Response) -> bool:
         if resp.status_code == 429 or resp.status_code >= 500:
             return True
         if resp.status_code != 403:
@@ -160,7 +160,7 @@ class GmailClient:
         return bool(reasons & {"rateLimitExceeded", "userRateLimitExceeded", "backendError"})
 
     @staticmethod
-    def _retry_delay(resp: httpx.Response, backoff: float, attempt: int) -> float:
+    def _retry_delay(resp: httpx2.Response, backoff: float, attempt: int) -> float:
         try:
             retry_after = resp.headers.get("Retry-After")
             if retry_after is not None:

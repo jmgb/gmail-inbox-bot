@@ -10,7 +10,7 @@ import os
 from collections import Counter
 from pathlib import Path
 
-import httpx
+import httpx2
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -78,7 +78,7 @@ async def _fetch_metrics(
     all_rows: list[dict] = []
     offset = 0
 
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx2.AsyncClient(timeout=15) as client:
         while True:
             page_params = {**params, "offset": str(offset), "limit": str(_PAGE_SIZE)}
             resp = await client.get(endpoint, headers=headers, params=page_params)

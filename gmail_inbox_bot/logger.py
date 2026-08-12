@@ -129,6 +129,10 @@ def setup_logger(
     # Silenciar módulos verbosos (excepto en modo debug)
     if not debug_mode:
         for mod in [
+            "httpx2",
+            "httpcore2",
+            # openai/supabase y compania siguen sobre httpx 0.x: hay que
+            # callar tambien los loggers antiguos.
             "httpx",
             "httpcore",
             "urllib3",
@@ -146,6 +150,10 @@ def setup_logger(
         logging.getLogger("openai").setLevel(logging.INFO)
         # Mantener algunos módulos ruidosos en WARNING, pero dejar uvicorn visible
         for mod in [
+            "httpx2",
+            "httpcore2",
+            # openai/supabase y compania siguen sobre httpx 0.x: hay que
+            # callar tambien los loggers antiguos.
             "httpx",
             "httpcore",
             "urllib3",
