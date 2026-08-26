@@ -27,6 +27,29 @@ from .telegram_logger import setup_telegram_logging
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
 
 
+class _LoggingAlertSink:
+    """Registra el motivo de cada fallback en el log de la app.
+
+    ``neutral-llm-gateway`` 0.13.0 no incluye todavía ``error_message`` ni
+    ``failures`` en el payload del alert (llegan en 0.14.1); se usa
+    ``dict.get`` para no romper si faltan y aprovechar el detalle extra en
+    cuanto se actualice la dependencia.
+    """
+
+    def alert(self, message: str, fields: dict[str, object]) -> None:
+        log.warning(
+            "🔔 LLM gateway alert: %s | requested_model=%s model_used=%s "
+            "error_type=%s error_message=%s failure_phase=%s failures=%s",
+            message,
+            fields.get("requested_model"),
+            fields.get("model_used"),
+            fields.get("error_type"),
+            fields.get("error_message"),
+            fields.get("failure_phase"),
+            fields.get("failures"),
+        )
+
+
 def _build_gmail_client(
     env: dict[str, str],
     mailbox_config: dict,
@@ -73,7 +96,9 @@ def _build_llm_clients(env: dict[str, str]) -> SynchronousLLMGateway | None:
         return None
 
     registry = build_registry(openai_client=openai_client, groq_client=groq_client)
-    return SynchronousLLMGateway(LLMGateway(registry=registry), registry)
+    return SynchronousLLMGateway(
+        LLMGateway(registry=registry, alert_sink=_LoggingAlertSink()), registry
+    )
 
 
 def _has_llm_client(client_or_clients) -> bool:

@@ -3,7 +3,14 @@
 import json
 from pathlib import Path
 
-from llm_gateway import FallbackPolicy, LLMRequest, Message, ResponseFormat, RetryPolicy
+from llm_gateway import (
+    AllAttemptsFailed,
+    FallbackPolicy,
+    LLMRequest,
+    Message,
+    ResponseFormat,
+    RetryPolicy,
+)
 
 from .llm_costs import build_cost_metadata
 from .llm_gateway_client import SynchronousLLMGateway
@@ -60,6 +67,34 @@ def _request(
     )
 
 
+def _log_fallback_if_used(response, *, source: str) -> None:
+    """Registra el motivo cuando el modelo pedido falló y otro respondió.
+
+    ``Execution.fallback_cause`` no existe en neutral-llm-gateway 0.13.0
+    (llega en 0.14.1), así que se accede con ``getattr`` para no romper la
+    versión fijada hoy y aprovechar el detalle automáticamente al subir.
+    """
+    if not response.execution.fallback_used:
+        return
+    cause = getattr(response.execution, "fallback_cause", None)
+    if cause is None:
+        log.info(
+            "🔁 Fallback usado en %s: %s -> %s (motivo no disponible)",
+            source,
+            response.execution.requested_model,
+            response.execution.model_used,
+        )
+        return
+    log.info(
+        "🔁 Fallback usado en %s: %s -> %s | motivo=%s: %s",
+        source,
+        response.execution.requested_model,
+        response.execution.model_used,
+        cause.error_type,
+        getattr(cause, "error_message", None),
+    )
+
+
 def _sanitize_reason(value: object) -> str:
     if not isinstance(value, str):
         return ""
@@ -107,6 +142,7 @@ def classify_email(
             source="email_classification",
         )
         response = client.generate(request)
+        _log_fallback_if_used(response, source="classify_email")
         result = dict(response.output)
         categoria = result.get("categoria", "")
         idioma = result.get("idioma", "")
@@ -124,6 +160,16 @@ def classify_email(
         )
         log.debug("Clasificación JSON completo: %s", json.dumps(result, ensure_ascii=False))
         return result
+    except AllAttemptsFailed as exc:
+        log.warning(
+            "Classification failed (%s): %s | last_error=%s last_error_message=%s",
+            type(exc).__name__,
+            str(exc)[:300],
+            exc.last_error,
+            getattr(exc, "last_error_message", None),
+            exc_info=True,
+        )
+        return None
     except Exception as exc:
         log.warning(
             "Classification failed (%s): %s",
@@ -153,6 +199,7 @@ def generate_response(
             source="dynamic_reply",
         )
         response = client.generate(request)
+        _log_fallback_if_used(response, source="generate_response")
         text = response.text.strip()
         result = {"text": text, "model_used": response.execution.model_used}
         metadata = build_cost_metadata(response)
@@ -165,6 +212,16 @@ def generate_response(
             "..." if len(text) > 200 else "",
         )
         return result
+    except AllAttemptsFailed as exc:
+        log.warning(
+            "Response generation failed (%s): %s | last_error=%s last_error_message=%s",
+            type(exc).__name__,
+            str(exc)[:300],
+            exc.last_error,
+            getattr(exc, "last_error_message", None),
+            exc_info=True,
+        )
+        return None
     except Exception as exc:
         log.warning(
             "Response generation failed (%s): %s",

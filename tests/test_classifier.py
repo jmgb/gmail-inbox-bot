@@ -336,6 +336,27 @@ class TestProviderRoutingAndFallback:
         assert client.openai.requests[0].reasoning_effort is None
         assert result["model_used"] == GPT_5_LUNA
 
+    def test_groq_failure_falls_back_and_logs_the_reason(self, caplog):
+        client = _SynchronousGatewayDouble(
+            groq=(RateLimitedError("Groq 429 quota"),),
+            openai=(_response('{"categoria":"otros","razon_clasificacion":""}'),),
+        )
+
+        with caplog.at_level("INFO", logger="gmail_inbox_bot.classifier"):
+            classify_email(
+                client,
+                "system prompt",
+                "s",
+                "b",
+                "n",
+                "e@e.com",
+                False,
+                model=GPT_OSS_120B,
+            )
+
+        info_records = [record.message for record in caplog.records]
+        assert any("Fallback usado en classify_email" in message for message in info_records)
+
     def test_both_providers_fail_returns_none(self):
         client = _SynchronousGatewayDouble(
             groq=(RateLimitedError("Groq down"),),
@@ -356,6 +377,28 @@ class TestProviderRoutingAndFallback:
         assert client.groq.calls == [GPT_OSS_120B]
         assert client.openai.calls == [GPT_5_LUNA]
         assert result is None
+
+    def test_both_providers_fail_logs_last_error(self, caplog):
+        client = _SynchronousGatewayDouble(
+            groq=(RateLimitedError("Groq down"),),
+            openai=(RateLimitedError("OpenAI down"),),
+        )
+
+        with caplog.at_level("WARNING", logger="gmail_inbox_bot.classifier"):
+            result = classify_email(
+                client,
+                "system prompt",
+                "s",
+                "b",
+                "n",
+                "e@e.com",
+                False,
+                model=GPT_OSS_120B,
+            )
+
+        assert result is None
+        warning_records = [record.message for record in caplog.records]
+        assert any("last_error=RateLimitedError" in message for message in warning_records)
 
     def test_missing_groq_client_starts_with_openai_fallback(self):
         client = _SynchronousGatewayDouble(
