@@ -32,7 +32,7 @@ from gmail_inbox_bot.telegram import enviar_mensaje_telegram  # noqa: E402
 
 MADRID = zoneinfo.ZoneInfo("Europe/Madrid")
 DEFAULT_DEST = Path("/mnt/c/Users/USER/Desktop/Facturas Doctor")
-KEYWORDS = ("factura", "invoice", "receipt", "recibo", "facture",
+KEYWORDS = ("factura", "fatura", "invoice", "receipt", "recibo", "facture",
             "fattura", "rechnung", "billing")
 
 

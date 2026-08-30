@@ -39,6 +39,7 @@ def test_is_invoice_candidate_matches_subject_or_filename_case_insensitive():
     assert is_invoice_candidate("Tu FACTURA de agosto", ["adjunto.pdf"])
     assert is_invoice_candidate("Payment confirmation", ["Invoice-2026-08.pdf"])
     assert is_invoice_candidate("Ihre Rechnung", ["doc.pdf"])
+    assert is_invoice_candidate("Sua fatura está fechada", ["doc.pdf"])  # pt: una sola t
     assert not is_invoice_candidate("Fotos del viaje", ["fotos.pdf"])
 
 
