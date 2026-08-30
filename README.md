@@ -470,6 +470,7 @@ uv sync                                       # instalar dependencias
 uv run python -m gmail_inbox_bot              # bot de polling (loop)
 uv run python -m gmail_inbox_bot --once       # un solo ciclo de poll
 uv run python -m gmail_inbox_bot --dry-run    # sin ejecutar acciones
+uv run python scripts/download_invoice_emails.py  # facturas PDF del mes anterior al escritorio (cron dia 1, 09:30)
 uv run python -m gmail_inbox_bot --server     # FastAPI + bot + scheduler en background
 uv run python -m gmail_inbox_bot.calendar_reminders --once --dry-run  # recordatorios (prueba)
 
