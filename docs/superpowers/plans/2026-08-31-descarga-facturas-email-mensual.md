@@ -496,3 +496,12 @@ git commit -m "docs(facturas): puntero al cron de facturas recibidas por email (
   Detectado en la validación: los avisos «Novo pedido» de PT adjuntaban `Fatura-TEST-7/8.pdf` (QA).
 - Validado con agosto: 13 gastos + 1 ingreso (la factura 340 «Aquisgran», enviada a mano — el hueco
   340 de la serie ES), 2 emails de tienda omitidos, 4 en revisar.csv.
+
+## Addendum 2 (31 ago 2026): carpeta mensual definitiva
+
+Por decisión del usuario, la estructura pasa a `C:\Users\USER\Desktop\Facturas\<Mes_YYYY>\gastos\`
+e `ingresos\` (`month_folder()`: «Agosto_2026», mes en español). Sin subcarpeta por cuenta: las dos
+cuentas comparten carpetas y la cuenta viaja como columna en `indice_email.csv`/`revisar.csv`, que
+viven en la raíz del mes. El cron de tiendas del repo doctor escribe sus facturas (ingresos) en el
+mismo `<Mes_YYYY>/ingresos/`. La carpeta anterior `Facturas Doctor/2026-08/` se eliminó y agosto se
+regeneró completo en la nueva ruta (ambos crons son idempotentes).

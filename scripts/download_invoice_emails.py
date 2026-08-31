@@ -31,7 +31,7 @@ from gmail_inbox_bot.config import load_env, load_mailbox_configs  # noqa: E402
 from gmail_inbox_bot.telegram import enviar_mensaje_telegram  # noqa: E402
 
 MADRID = zoneinfo.ZoneInfo("Europe/Madrid")
-DEFAULT_DEST = Path("/mnt/c/Users/USER/Desktop/Facturas Doctor")
+DEFAULT_DEST = Path("/mnt/c/Users/USER/Desktop/Facturas")
 KEYWORDS = ("factura", "fatura", "invoice", "receipt", "recibo", "facture",
             "fattura", "rechnung", "billing")
 # Los avisos de pedido de las tiendas propias adjuntan su factura, pero esas ya las descarga el
@@ -43,6 +43,16 @@ OWN_STORE_DOMAINS = ("drcornudo.com", "drcorno.com", "drcuckold.net",
 # ---------- helpers puros ----------
 def previous_month(today: dt.date) -> str:
     return (today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
+
+
+MESES_ES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
+            "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+
+
+def month_folder(month: str) -> str:
+    """Carpeta mensual legible: '2026-08' → 'Agosto_2026'."""
+    year, num = month.split("-")
+    return f"{MESES_ES[int(num) - 1]}_{year}"
 
 
 def month_bounds_epoch(month: str) -> tuple[int, int]:
@@ -97,7 +107,7 @@ def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
 # ---------- flujo por cuenta ----------
 def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool) -> dict:
     name = mailbox.get("name", mailbox["email"])
-    out_dir = dest / safe_filename(name)
+    out_dir = Path(dest)  # compartida entre cuentas: la cuenta va como columna en el índice
     downloaded, skipped, review, own_store, errors = [], [], [], [], []
     for stub in gmail.iter_message_stubs(query=gmail_query(month), page_size=500):
         message_id = stub["id"]
@@ -176,7 +186,7 @@ def main() -> int:
     args = parser.parse_args()
     env = load_env()
     month = args.month or previous_month(dt.date.today())
-    dest = args.dest / month / "email"
+    dest = args.dest / month_folder(month)
     boxes = load_mailbox_configs()
     if args.mailbox:
         boxes = [b for b in boxes

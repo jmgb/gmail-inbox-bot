@@ -11,6 +11,7 @@ from scripts.download_invoice_emails import (
     gmail_query,
     is_invoice_candidate,
     month_bounds_epoch,
+    month_folder,
     pdf_filename,
     previous_month,
     process_account,
@@ -28,6 +29,12 @@ def test_month_bounds_epoch_uses_madrid_midnights():
     start, end = month_bounds_epoch("2026-08")
     assert start == int(dt.datetime(2026, 8, 1, tzinfo=MADRID).timestamp())
     assert end == int(dt.datetime(2026, 9, 1, tzinfo=MADRID).timestamp())
+
+
+def test_month_folder_is_spanish_month_name_with_year():
+    assert month_folder("2026-08") == "Agosto_2026"
+    assert month_folder("2025-12") == "Diciembre_2025"
+    assert month_folder("2026-01") == "Enero_2026"
 
 
 def test_gmail_query_targets_pdf_attachments_in_month():
@@ -125,8 +132,9 @@ def test_process_account_splits_gastos_ingresos_and_reports_review(tmp_path: Pat
     # los emails de las tiendas propias se omiten: sus facturas las trae el cron de tiendas
     assert len(result["own_store"]) == 1
     assert result["own_store"][0]["sender"] == "doctor@drcorno.com"
-    gastos = list((tmp_path / "jesus82c" / "gastos").glob("*.pdf"))
-    ingresos = list((tmp_path / "jesus82c" / "ingresos").glob("*.pdf"))
+    # sin subcarpeta por cuenta: ambas cuentas comparten gastos/ e ingresos/
+    gastos = list((tmp_path / "gastos").glob("*.pdf"))
+    ingresos = list((tmp_path / "ingresos").glob("*.pdf"))
     assert len(gastos) == 1 and gastos[0].read_bytes().startswith(b"%PDF-")
     assert len(ingresos) == 1 and "factura-340" in ingresos[0].name
     # idempotencia: segunda pasada no re-descarga
