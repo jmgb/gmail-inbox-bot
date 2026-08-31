@@ -505,3 +505,12 @@ cuentas comparten carpetas y la cuenta viaja como columna en `indice_email.csv`/
 viven en la raíz del mes. El cron de tiendas del repo doctor escribe sus facturas (ingresos) en el
 mismo `<Mes_YYYY>/ingresos/`. La carpeta anterior `Facturas Doctor/2026-08/` se eliminó y agosto se
 regeneró completo en la nueva ruta (ambos crons son idempotentes).
+
+## Addendum 3 (31 ago 2026): cron diario autocurativo
+
+Los dos crons dejan de depender del día 1 exacto (si el PC/WSL estaba apagado, nadie se enteraba):
+ahora corren **a diario** (09:00 tiendas, 09:30 email) con `--only-if-missing`. Una pasada sin
+errores escribe `<Mes_YYYY>/.ok-tiendas` / `.ok-email`; mientras el marcador exista, el cron sale en
+silencio sin tocar Gmail ni WordPress. Sin marcador (mes nuevo, PC apagado el día 1, o pasada con
+errores) ejecuta la descarga completa y notifica. Un fallo persistente re-notifica ❌ una vez al día
+hasta arreglarse. Validado: primera pasada escribe el marcador, la segunda responde «ya completado».

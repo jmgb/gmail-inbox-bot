@@ -6,6 +6,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from scripts.download_invoice_emails import (
+    already_completed,
     build_message,
     classify_direction,
     gmail_query,
@@ -29,6 +30,13 @@ def test_month_bounds_epoch_uses_madrid_midnights():
     start, end = month_bounds_epoch("2026-08")
     assert start == int(dt.datetime(2026, 8, 1, tzinfo=MADRID).timestamp())
     assert end == int(dt.datetime(2026, 9, 1, tzinfo=MADRID).timestamp())
+
+
+def test_already_completed_only_when_success_marker_exists(tmp_path: Path):
+    assert not already_completed(tmp_path, "2026-08")
+    (tmp_path / "Agosto_2026").mkdir()
+    (tmp_path / "Agosto_2026" / ".ok-email").write_text("2026-09-01T09:30:00+00:00")
+    assert already_completed(tmp_path, "2026-08")
 
 
 def test_month_folder_is_spanish_month_name_with_year():

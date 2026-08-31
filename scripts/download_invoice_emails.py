@@ -55,6 +55,13 @@ def month_folder(month: str) -> str:
     return f"{MESES_ES[int(num) - 1]}_{year}"
 
 
+MARKER = ".ok-email"  # lo escribe una pasada sin errores; el cron diario se calla si existe
+
+
+def already_completed(dest: Path, month: str) -> bool:
+    return (Path(dest) / month_folder(month) / MARKER).exists()
+
+
 def month_bounds_epoch(month: str) -> tuple[int, int]:
     start = dt.datetime.strptime(month, "%Y-%m").replace(tzinfo=MADRID)
     end_date = (start.date().replace(day=28) + dt.timedelta(days=4)).replace(day=1)
@@ -183,9 +190,15 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="lista sin descargar")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--notify", action="store_true", help="aviso Telegram (cron)")
+    parser.add_argument("--only-if-missing", action="store_true",
+                        help="modo cron diario autocurativo: sal en silencio si el mes ya se "
+                             "descargó sin errores")
     args = parser.parse_args()
     env = load_env()
     month = args.month or previous_month(dt.date.today())
+    if args.only_if_missing and already_completed(args.dest, month):
+        print(f"{month} ya completado ({month_folder(month)}/{MARKER}); nada que hacer")
+        return 0
     dest = args.dest / month_folder(month)
     boxes = load_mailbox_configs()
     if args.mailbox:
@@ -226,6 +239,8 @@ def main() -> int:
     if totals["own_store"]:
         omitted = len(totals["own_store"])
         message += f"\nEmails de tiendas propias omitidos (los cubre el cron de tiendas): {omitted}"
+    if not totals["errors"]:
+        (dest / MARKER).write_text(dt.datetime.now(dt.timezone.utc).isoformat())
     print(message)
     if args.notify:
         try:
