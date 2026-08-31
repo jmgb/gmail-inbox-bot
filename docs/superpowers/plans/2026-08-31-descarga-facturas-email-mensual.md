@@ -481,3 +481,18 @@ git commit -m "docs(facturas): puntero al cron de facturas recibidas por email (
 - Cobertura: cron día 1 ✔ (Task 3), dos cuentas ✔ (configs YAML ya existentes, sin `--mailbox` procesa todas), reutiliza conexiones ✔ (`_build_gmail_client` + tokens `.env`), plan .md antes de implementar ✔ (este documento), descarga «todas las facturas» ✔ con red de seguridad `revisar.csv` para las que el filtro no reconozca.
 - Sin placeholders: todo el código está inline.
 - Consistencia de tipos: `process_account` devuelve `dict[str, list]` y `main` agrega con las mismas claves; `pdf_filename` usa kwargs idénticos en test e implementación.
+
+---
+
+## Addendum (31 ago 2026, tras feedback del usuario): dirección contable
+
+- **Las recibidas son gastos y las enviadas por el titular son ingresos.** La búsqueda de Gmail ya
+  cubría ambas (sin `in:` recorre All Mail, enviados incluidos); ahora `classify_direction()` separa
+  por label `SENT` o remitente = titular, y los PDFs van a `email/<cuenta>/gastos/` o
+  `email/<cuenta>/ingresos/`, con columna `tipo` en `indice_email.csv` y `revisar.csv`.
+- **Los avisos de pedido de las tiendas propias se omiten** (`OWN_STORE_DOMAINS`, los 6 dominios
+  doctor): adjuntan la factura de la venta, pero esa ya la descarga el cron de tiendas y aquí se
+  clasificaría mal (como gasto). El resumen los cuenta («Emails de tiendas propias omitidos: N»).
+  Detectado en la validación: los avisos «Novo pedido» de PT adjuntaban `Fatura-TEST-7/8.pdf` (QA).
+- Validado con agosto: 13 gastos + 1 ingreso (la factura 340 «Aquisgran», enviada a mano — el hueco
+  340 de la serie ES), 2 emails de tienda omitidos, 4 en revisar.csv.

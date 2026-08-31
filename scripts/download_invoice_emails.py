@@ -34,6 +34,10 @@ MADRID = zoneinfo.ZoneInfo("Europe/Madrid")
 DEFAULT_DEST = Path("/mnt/c/Users/USER/Desktop/Facturas Doctor")
 KEYWORDS = ("factura", "fatura", "invoice", "receipt", "recibo", "facture",
             "fattura", "rechnung", "billing")
+# Los avisos de pedido de las tiendas propias adjuntan su factura, pero esas ya las descarga el
+# cron de tiendas del repo doctor (y aquí se clasificarían mal, como gasto). Se omiten y se cuentan.
+OWN_STORE_DOMAINS = ("drcornudo.com", "drcorno.com", "drcuckold.net",
+                     "drcornuto.com", "drcocu.com", "drcuckold.de")
 
 
 # ---------- helpers puros ----------
@@ -58,6 +62,13 @@ def is_invoice_candidate(subject: str, filenames: list[str]) -> bool:
     return any(keyword in haystack for keyword in KEYWORDS)
 
 
+def classify_direction(*, sender: str, labels: list[str], me: str) -> str:
+    """Enviada por el titular → factura emitida (ingresos); recibida → gasto."""
+    if "SENT" in labels or (sender or "").lower() == (me or "").lower():
+        return "ingresos"
+    return "gastos"
+
+
 def pdf_filename(*, internal_date_iso: str, sender: str, message_id: str, original: str) -> str:
     day = (internal_date_iso or "").replace("-", "")[:8] or "00000000"
     domain = (sender.rsplit("@", 1)[-1] or "desconocido").lower()
@@ -66,10 +77,11 @@ def pdf_filename(*, internal_date_iso: str, sender: str, message_id: str, origin
 
 def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
     total = len(downloaded) + len(skipped)
-    per_box: dict[str, int] = {}
+    per_key: dict[str, int] = {}
     for entry in downloaded + skipped:
-        per_box[entry["mailbox"]] = per_box.get(entry["mailbox"], 0) + 1
-    detail = ", ".join(f"{k} {v}" for k, v in sorted(per_box.items())) or "ninguna"
+        for key in (entry.get("tipo", "?"), entry["mailbox"]):
+            per_key[key] = per_key.get(key, 0) + 1
+    detail = ", ".join(f"{k} {v}" for k, v in sorted(per_key.items())) or "ninguna"
     if errors:
         lines = [f"❌ Facturas email de {month}: {len(errors)} error(es), {total} OK ({detail})"]
         lines += [f"- {e['mailbox']} {e['message_id']}: {e['error']}" for e in errors[:10]]
@@ -86,7 +98,7 @@ def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
 def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool) -> dict:
     name = mailbox.get("name", mailbox["email"])
     out_dir = dest / safe_filename(name)
-    downloaded, skipped, review, errors = [], [], [], []
+    downloaded, skipped, review, own_store, errors = [], [], [], [], []
     for stub in gmail.iter_message_stubs(query=gmail_query(month), page_size=500):
         message_id = stub["id"]
         try:
@@ -98,8 +110,13 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
             date_iso = dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc).isoformat()
             pdf_names = [p.get_filename() or "" for p in parsed.walk()
                          if p.get_content_type().lower() == "application/pdf"]
+            if sender.rsplit("@", 1)[-1].lower() in OWN_STORE_DOMAINS:
+                own_store.append({"mailbox": name, "sender": sender, "subject": subject})
+                continue
+            tipo = classify_direction(sender=sender, labels=raw.get("labelIds") or [],
+                                      me=mailbox["email"])
             if not is_invoice_candidate(subject, pdf_names):
-                review.append({"mailbox": name, "date": date_iso[:10],
+                review.append({"mailbox": name, "tipo": tipo, "date": date_iso[:10],
                                "sender": sender, "subject": subject})
                 continue
             artifacts = extract_artifacts(raw["raw_bytes"], out_dir,
@@ -108,10 +125,11 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
                 if artifact.kind != "pdf":
                     artifact.path.unlink(missing_ok=True)
                     continue
-                final = out_dir / pdf_filename(internal_date_iso=date_iso, sender=sender,
-                                               message_id=message_id,
-                                               original=artifact.filename)
-                entry = {"mailbox": name, "date": date_iso[:10], "sender": sender,
+                final = out_dir / tipo / pdf_filename(internal_date_iso=date_iso, sender=sender,
+                                                      message_id=message_id,
+                                                      original=artifact.filename)
+                final.parent.mkdir(parents=True, exist_ok=True)
+                entry = {"mailbox": name, "tipo": tipo, "date": date_iso[:10], "sender": sender,
                          "subject": subject, "message_id": message_id,
                          "file": final.name, "size": artifact.size_bytes,
                          "sha256": artifact.sha256}
@@ -125,7 +143,8 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
             errors.append({"mailbox": name, "message_id": message_id,
                            "error": f"{type(exc).__name__}: {exc}"})
             print(f"[{name}] {message_id}: {exc}", file=sys.stderr)
-    return {"downloaded": downloaded, "skipped": skipped, "review": review, "errors": errors}
+    return {"downloaded": downloaded, "skipped": skipped, "review": review,
+            "own_store": own_store, "errors": errors}
 
 
 # ---------- E/S ----------
@@ -166,7 +185,7 @@ def main() -> int:
             print("ningún mailbox coincide", file=sys.stderr)
             return 2
 
-    totals = {"downloaded": [], "skipped": [], "review": [], "errors": []}
+    totals = {"downloaded": [], "skipped": [], "review": [], "own_store": [], "errors": []}
     for mailbox in boxes:
         gmail = _build_gmail_client(env, mailbox, request_rate_per_second=3.0,
                                     request_retries=5)
@@ -186,13 +205,17 @@ def main() -> int:
         return 0
 
     write_csv(dest / "indice_email.csv", totals["downloaded"] + totals["skipped"],
-              ["mailbox", "date", "sender", "subject", "message_id", "file", "size", "sha256"])
+              ["mailbox", "tipo", "date", "sender", "subject", "message_id", "file", "size",
+               "sha256"])
     if totals["review"]:
         write_csv(dest / "revisar.csv", totals["review"],
-                  ["mailbox", "date", "sender", "subject"])
+                  ["mailbox", "tipo", "date", "sender", "subject"])
     message = build_message(month, downloaded=totals["downloaded"], skipped=totals["skipped"],
                             review=totals["review"], errors=totals["errors"],
                             folder=windows_path(dest))
+    if totals["own_store"]:
+        omitted = len(totals["own_store"])
+        message += f"\nEmails de tiendas propias omitidos (los cubre el cron de tiendas): {omitted}"
     print(message)
     if args.notify:
         try:

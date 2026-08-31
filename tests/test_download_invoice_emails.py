@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.download_invoice_emails import (
     build_message,
+    classify_direction,
     gmail_query,
     is_invoice_candidate,
     month_bounds_epoch,
@@ -43,6 +44,16 @@ def test_is_invoice_candidate_matches_subject_or_filename_case_insensitive():
     assert not is_invoice_candidate("Fotos del viaje", ["fotos.pdf"])
 
 
+def test_classify_direction_sent_is_ingreso_and_received_is_gasto():
+    me = "jesus82c@gmail.com"
+    # enviada: label SENT o remitente = titular (aunque falte el label)
+    assert classify_direction(sender="jesus82c@gmail.com", labels=["SENT"], me=me) == "ingresos"
+    assert classify_direction(sender="jesus82c@gmail.com", labels=[], me=me) == "ingresos"
+    assert classify_direction(sender="otro@x.com", labels=["SENT"], me=me) == "ingresos"
+    # recibida
+    assert classify_direction(sender="billing@hostinger.com", labels=["INBOX"], me=me) == "gastos"
+
+
 def test_pdf_filename_is_deterministic_and_safe():
     name = pdf_filename(
         internal_date_iso="2026-08-14T09:30:00+00:00",
@@ -53,20 +64,23 @@ def test_pdf_filename_is_deterministic_and_safe():
     assert name == "20260814_hostinger.com_18f2a9c0_Factura Agosto_2026 final.pdf"
 
 
-def test_build_message_uses_status_icon_and_counts():
-    ok = build_message("2026-08", downloaded=[{"mailbox": "jesus82c"}], skipped=[],
-                       review=[1, 2], errors=[], folder="C:\\x")
+def test_build_message_uses_status_icon_and_direction_counts():
+    ok = build_message("2026-08",
+                       downloaded=[{"mailbox": "jesus82c", "tipo": "gastos"},
+                                   {"mailbox": "jesus82c", "tipo": "ingresos"}],
+                       skipped=[], review=[1, 2], errors=[], folder="C:\\x")
     assert ok.startswith("✅") and "2026-08" in ok and "revisar: 2" in ok
+    assert "gastos 1" in ok and "ingresos 1" in ok
     ko = build_message("2026-08", downloaded=[], skipped=[], review=[],
                        errors=[{"mailbox": "j", "message_id": "m", "error": "boom"}],
                        folder="C:\\x")
     assert ko.startswith("❌") and "boom" in ko
 
 
-def _raw(subject: str, pdf_name: str | None) -> bytes:
+def _raw(subject: str, pdf_name: str | None, sender: str = "billing@hostinger.com") -> bytes:
     message = EmailMessage()
-    message["From"] = "Hostinger <billing@hostinger.com>"
-    message["To"] = "me@example.com"
+    message["From"] = f"Remitente <{sender}>"
+    message["To"] = "destino@example.com"
     message["Subject"] = subject
     message.set_content("cuerpo")
     if pdf_name:
@@ -76,7 +90,7 @@ def _raw(subject: str, pdf_name: str | None) -> bytes:
 
 
 class FakeGmail:
-    def __init__(self, messages: dict[str, bytes]):
+    def __init__(self, messages: dict[str, tuple[bytes, list[str]]]):
         self._messages = messages
 
     def iter_message_stubs(self, *, query, include_spam_trash=False, page_size=500):
@@ -84,26 +98,38 @@ class FakeGmail:
             yield {"id": message_id}
 
     def get_raw_message(self, message_id: str) -> dict:
+        raw_bytes, labels = self._messages[message_id]
         return {
             "id": message_id,
             "internalDate": "1786700000000",  # 2026-08-14 UTC aprox
-            "raw_bytes": self._messages[message_id],
+            "labelIds": labels,
+            "raw_bytes": raw_bytes,
         }
 
 
-def test_process_account_downloads_invoices_skips_existing_and_reports_review(tmp_path: Path):
+def test_process_account_splits_gastos_ingresos_and_reports_review(tmp_path: Path):
     gmail = FakeGmail({
-        "aaaa1111": _raw("Tu factura de agosto", "factura.pdf"),
-        "bbbb2222": _raw("Fotos del finde", "fotos.pdf"),
+        "aaaa1111": (_raw("Tu factura de agosto", "factura.pdf"), ["INBOX"]),
+        "bbbb2222": (_raw("Fotos del finde", "fotos.pdf"), ["INBOX"]),
+        "cccc3333": (_raw("Factura 340 Aquisgran", "factura-340.pdf",
+                          sender="jesus82c@gmail.com"), ["SENT"]),
+        "dddd4444": (_raw("[Dr. Corno]: Novo pedido #814", "Fatura-TEST-8.pdf",
+                          sender="doctor@drcorno.com"), ["INBOX"]),
     })
     mailbox = {"name": "jesus82c", "email": "jesus82c@gmail.com"}
     result = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
                              dest=tmp_path, force=False)
-    assert len(result["downloaded"]) == 1 and not result["errors"]
+    assert len(result["downloaded"]) == 2 and not result["errors"]
+    assert {e["tipo"] for e in result["downloaded"]} == {"gastos", "ingresos"}
     assert len(result["review"]) == 1 and result["review"][0]["subject"] == "Fotos del finde"
-    saved = list((tmp_path / "jesus82c").glob("*.pdf"))
-    assert len(saved) == 1 and saved[0].read_bytes().startswith(b"%PDF-")
+    # los emails de las tiendas propias se omiten: sus facturas las trae el cron de tiendas
+    assert len(result["own_store"]) == 1
+    assert result["own_store"][0]["sender"] == "doctor@drcorno.com"
+    gastos = list((tmp_path / "jesus82c" / "gastos").glob("*.pdf"))
+    ingresos = list((tmp_path / "jesus82c" / "ingresos").glob("*.pdf"))
+    assert len(gastos) == 1 and gastos[0].read_bytes().startswith(b"%PDF-")
+    assert len(ingresos) == 1 and "factura-340" in ingresos[0].name
     # idempotencia: segunda pasada no re-descarga
     again = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
                             dest=tmp_path, force=False)
-    assert len(again["skipped"]) == 1 and not again["downloaded"]
+    assert len(again["skipped"]) == 2 and not again["downloaded"]
