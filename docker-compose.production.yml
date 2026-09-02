@@ -5,12 +5,18 @@ services:
     build: .
     container_name: gmail-inbox-bot
     env_file: [.env]
+    environment:
+      # Registro de actividad Telegram para el triage matinal (autofix-control-plane).
+      TELEGRAM_ACTIVITY_LOG: /var/log/telegram-activity/gmail-inbox-bot.jsonl
+      TELEGRAM_ACTIVITY_HOST: finanzas
     ports:
       - "8007:8000"
     volumes:
       - ./logs:/app/logs
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Directorio (nunca el archivo): el bind de archivo fija el inodo.
+      - /home/ubuntu/autofix-control-plane/logs/telegram:/var/log/telegram-activity
     restart: unless-stopped
     networks: [pymechat-net]
     deploy:

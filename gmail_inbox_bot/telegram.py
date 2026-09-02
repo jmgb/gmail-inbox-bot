@@ -9,6 +9,11 @@ import time
 
 import httpx2
 
+try:
+    from . import telegram_activity  # registro best-effort para el triage matinal
+except Exception:  # sin registro no se bloquea el aviso
+    telegram_activity = None
+
 log = logging.getLogger("gmail_inbox_bot.telegram")
 
 TELEGRAM_MAX_MESSAGE_LEN = 3500
@@ -142,6 +147,13 @@ def enviar_mensaje_telegram(
     if not chat_id:
         log.warning("%s — chat_id empty, skipping.", referencia)
         return
+
+    # Una línea por mensaje lógico: antes del troceo y de los reintentos.
+    if telegram_activity is not None:
+        try:
+            telegram_activity.registrar(mensaje, referencia=referencia)
+        except Exception:
+            pass
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     escaped = f"<b>[Gmail Bot]</b> {escapar_caracteres(mensaje)}"

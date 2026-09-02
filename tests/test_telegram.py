@@ -130,3 +130,57 @@ class TestEnviarMensajeTelegram:
         enviar_mensaje_telegram("hello", "999")
         payload = mock_send.call_args[1]["payload"]
         assert payload["chat_id"] == "999"
+
+
+class TestTelegramActivity:
+    """La captura para el triage registra una línea por mensaje lógico."""
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_registers_once_per_message(self, mock_send, mock_activity):
+        enviar_mensaje_telegram("⚠️ hola", referencia="reminder_failure")
+        mock_activity.registrar.assert_called_once_with("⚠️ hola", referencia="reminder_failure")
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram.time.sleep")
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_registers_once_even_when_chunked(self, mock_send, mock_sleep, mock_activity):
+        enviar_mensaje_telegram("x" * 7500, referencia="test")
+        assert mock_send.call_count == 3
+        mock_activity.registrar.assert_called_once()
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram.time.sleep")
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_registers_once_despite_retries(self, mock_post, mock_sleep, mock_activity):
+        fail = MagicMock(status_code=500, text="error")
+        fail.json.return_value = {"description": "error"}
+        mock_post.side_effect = [fail, MagicMock(status_code=200)]
+        enviar_mensaje_telegram("hola", referencia="test")
+        assert mock_post.call_count == 2
+        mock_activity.registrar.assert_called_once()
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram._send_chunk")
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "", "TELEGRAM_CHAT_ID": "123"})
+    def test_not_registered_when_not_configured(self, mock_send, mock_activity):
+        enviar_mensaje_telegram("hola")
+        mock_activity.registrar.assert_not_called()
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_activity_failure_does_not_block_send(self, mock_send, mock_activity):
+        mock_activity.registrar.side_effect = RuntimeError("disco lleno")
+        enviar_mensaje_telegram("hola", referencia="test")
+        mock_send.assert_called_once()
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity", None)
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_missing_helper_still_sends(self, mock_send):
+        enviar_mensaje_telegram("hola", referencia="test")
+        mock_send.assert_called_once()
