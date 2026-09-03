@@ -361,7 +361,7 @@ requires-dist = [
     { name = "google-auth-oauthlib", specifier = ">=1.4.1" },
     { name = "httpx2", specifier = ">=2.12.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "neutral-llm-gateway", extras = ["groq", "openai"], specifier = "==0.14.1" },
+    { name = "neutral-llm-gateway", extras = ["groq", "openai"], specifier = "==0.16.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "pyyaml", specifier = ">=6.0.3" },
@@ -695,14 +695,14 @@ wheels = [
 
 [[package]]
 name = "neutral-llm-gateway"
-version = "0.14.1"
+version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/97/9ac70fcc3ecf8d13baf004b0d22d644259bc586217db0195919670edf546/neutral_llm_gateway-0.14.1.tar.gz", hash = "sha256:2b9bb79604b81c1523b73ea36410e3b35e2536604bf82ce57f26c721dfebde99", size = 266639, upload-time = "2026-08-26T08:41:43.274Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/8d/39a8adbf26e5e0199badd1328db1244680561ff381cb6c34900116f08877/neutral_llm_gateway-0.16.0.tar.gz", hash = "sha256:ef701331b609f37d6910af32d1ccc09d48d665b37f0ea63f5c64953f0ed313db", size = 283186, upload-time = "2026-09-03T21:55:24.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/e0/4d318d22ab0605212328d40aa29072b94d108170d637bc870dcb8bcb7953/neutral_llm_gateway-0.14.1-py3-none-any.whl", hash = "sha256:ca1a88e70349a4fa9156cb3377b3af5f675998c4c0c2c396c6cd1e3796f0bdd9", size = 99361, upload-time = "2026-08-26T08:41:41.606Z" },
+    { url = "https://files.pythonhosted.org/packages/64/53/5a318cc2ca5e1716b691e198bf22946479410270885f3562310f53279fa0/neutral_llm_gateway-0.16.0-py3-none-any.whl", hash = "sha256:0b179e4a4150a125c5d36aa96e0507100d9fdfdd7f9d7f2f2bb18f79127c6d39", size = 99508, upload-time = "2026-09-03T21:55:22.66Z" },
 ]
 
 [package.optional-dependencies]

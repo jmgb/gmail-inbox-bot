@@ -1,6 +1,7 @@
 """Architecture gate for provider-neutral chat callers."""
 
 import ast
+import tomllib
 from pathlib import Path
 
 PROVIDER_SDKS = {"anthropic", "google.generativeai", "google.genai", "groq", "openai"}
@@ -56,3 +57,17 @@ def test_application_code_does_not_import_provider_sdks_directly():
         "Chat/JSON callers must depend on neutral-llm-gateway; "
         f"direct provider SDK imports found: {violations}"
     )
+
+
+def test_neutral_llm_gateway_pin_is_current():
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    gateway_dependencies = [
+        dependency
+        for dependency in pyproject["project"]["dependencies"]
+        if dependency.startswith("neutral-llm-gateway")
+    ]
+
+    assert gateway_dependencies == ["neutral-llm-gateway[groq,openai]==0.16.0"]

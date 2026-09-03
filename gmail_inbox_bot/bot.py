@@ -30,10 +30,9 @@ log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
 class _LoggingAlertSink:
     """Registra el motivo de cada fallback en el log de la app.
 
-    ``neutral-llm-gateway`` 0.13.0 no incluye todavía ``error_message`` ni
-    ``failures`` en el payload del alert (llegan en 0.14.1); se usa
-    ``dict.get`` para no romper si faltan y aprovechar el detalle extra en
-    cuanto se actualice la dependencia.
+    El payload del alert puede variar entre versiones del gateway; se usa
+    ``dict.get`` para mantener compatibilidad con despliegues que aún no
+    incluyan ``error_message`` o ``failures``.
     """
 
     def alert(self, message: str, fields: dict[str, object]) -> None:

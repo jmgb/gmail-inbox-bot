@@ -70,9 +70,9 @@ def _request(
 def _log_fallback_if_used(response, *, source: str) -> None:
     """Registra el motivo cuando el modelo pedido falló y otro respondió.
 
-    ``Execution.fallback_cause`` no existe en neutral-llm-gateway 0.13.0
-    (llega en 0.14.1), así que se accede con ``getattr`` para no romper la
-    versión fijada hoy y aprovechar el detalle automáticamente al subir.
+    ``Execution.fallback_cause`` puede faltar en payloads de despliegues
+    antiguos, así que se accede con ``getattr`` para conservar la compatibilidad
+    y aprovechar el detalle cuando esté disponible.
     """
     if not response.execution.fallback_used:
         return
