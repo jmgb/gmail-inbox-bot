@@ -2,6 +2,11 @@ name: Deploy Gmail Inbox Bot
 on:
   push:
     branches: [main]
+    # Un commit de solo tests o docs no cambia la imagen: no redesplegar.
+    paths-ignore:
+      - 'tests/**'
+      - 'docs/**'
+      - '**.md'
   workflow_dispatch:
 
 concurrency:
