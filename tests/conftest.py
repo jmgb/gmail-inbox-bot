@@ -1,6 +1,7 @@
 """Shared fixtures for gmail_inbox_bot tests."""
 
 import copy
+import os
 
 import pytest
 
@@ -93,3 +94,8 @@ def graph():
     g = MagicMock()
     g.draft_mode = False
     return g
+
+
+# Los tests simulan avisos de Telegram: nunca deben acabar en el JSONL de
+# triage del host (gmail_inbox_bot/telegram_activity.py cae a ~/ai_projects/... sin env).
+os.environ["TELEGRAM_ACTIVITY_LOG"] = os.devnull
