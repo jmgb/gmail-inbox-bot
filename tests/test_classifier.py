@@ -16,12 +16,17 @@ from llm_gateway import (
 
 from gmail_inbox_bot.classifier import (
     DEFAULT_MODEL,
+    GPT_5,
     GPT_5_LUNA,
     GPT_OSS_120B,
     classify_email,
     generate_response,
 )
 from gmail_inbox_bot.llm_gateway_client import SynchronousLLMGateway
+
+
+def test_gpt_5_alias_uses_astra():
+    assert GPT_5 == "gpt-6-astra"
 
 
 def _response(

@@ -19,7 +19,7 @@ from .logger import setup_logger
 log = setup_logger("gmail_inbox_bot.classifier", "logs/app.log")
 
 # Default model — overridden by YAML config per mailbox
-GPT_5 = "gpt-5.6-sol"
+GPT_5 = "gpt-6-astra"
 GPT_5_LUNA = "gpt-5.6-luna"
 GPT_OSS_120B = "openai/gpt-oss-120b"
 DEFAULT_MODEL = GPT_OSS_120B
