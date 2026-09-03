@@ -102,3 +102,17 @@ class TestNotifyTrade:
         msg = mock_send.call_args[0][0]
         assert "BUY" in msg
         assert "\U0001f7e2" in msg  # green circle for BUY
+
+    @patch("gmail_inbox_bot.ib_trades.enviar_mensaje_telegram")
+    def test_sell_notification_is_level_ok(self, mock_send):
+        """El 🔴 de una venta es informativo: no debe registrarse como error."""
+        trade = Trade(
+            side="SOLD",
+            quantity=2065,
+            ticker="AIXI",
+            price=0.4592,
+            account="UXXX55709",
+            timestamp="2026-09-03T15:22:39+02:00",
+        )
+        notify_trade(trade, "jesus82c@gmail.com")
+        assert mock_send.call_args.kwargs["nivel"] == "ok"

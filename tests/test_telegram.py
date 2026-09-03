@@ -140,7 +140,9 @@ class TestTelegramActivity:
     @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
     def test_registers_once_per_message(self, mock_send, mock_activity):
         enviar_mensaje_telegram("⚠️ hola", referencia="reminder_failure")
-        mock_activity.registrar.assert_called_once_with("⚠️ hola", referencia="reminder_failure")
+        mock_activity.registrar.assert_called_once_with(
+            "⚠️ hola", referencia="reminder_failure", nivel=None
+        )
 
     @patch("gmail_inbox_bot.telegram.telegram_activity")
     @patch("gmail_inbox_bot.telegram.time.sleep")
@@ -184,3 +186,17 @@ class TestTelegramActivity:
     def test_missing_helper_still_sends(self, mock_send):
         enviar_mensaje_telegram("hola", referencia="test")
         mock_send.assert_called_once()
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_explicit_level_is_forwarded(self, mock_send, mock_activity):
+        enviar_mensaje_telegram("\U0001f534 SOLD AIXI", referencia="ib_trade", nivel="ok")
+        assert mock_activity.registrar.call_args.kwargs["nivel"] == "ok"
+
+    @patch("gmail_inbox_bot.telegram.telegram_activity")
+    @patch("gmail_inbox_bot.telegram._send_chunk", return_value=(True, ""))
+    @patch.dict("os.environ", {"TELEGRAM_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"})
+    def test_level_defaults_to_inferred(self, mock_send, mock_activity):
+        enviar_mensaje_telegram("hola", referencia="test")
+        assert mock_activity.registrar.call_args.kwargs["nivel"] is None

@@ -76,4 +76,5 @@ def notify_trade(trade: Trade, mailbox: str) -> None:
     lines.append(f"<b>Buzón:</b> {mailbox}")
     lines.append(f"<b>Hora:</b> {trade.timestamp}")
 
-    enviar_mensaje_telegram("\n".join(lines), referencia="ib_trade")
+    # nivel explícito: el 🔴 de una venta es informativo, no un error.
+    enviar_mensaje_telegram("\n".join(lines), referencia="ib_trade", nivel="ok")

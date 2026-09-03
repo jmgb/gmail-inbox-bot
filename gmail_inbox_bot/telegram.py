@@ -137,8 +137,14 @@ def enviar_mensaje_telegram(
     *,
     referencia: str = "",
     max_retries: int = 2,
+    nivel: str | None = None,
 ) -> None:
-    """Send a Telegram message with chunking and retries."""
+    """Send a Telegram message with chunking and retries.
+
+    `nivel` fija el nivel del registro de actividad ("ok", "warning", "error").
+    Sin él se infiere del texto, lo que marca como error cualquier aviso
+    informativo que use 🔴/🚨 con otro significado (p. ej. una venta de IB).
+    """
     token = os.getenv("TELEGRAM_TOKEN", "")
     if not token:
         log.warning("%s — TELEGRAM_TOKEN not set, skipping.", referencia)
@@ -151,7 +157,7 @@ def enviar_mensaje_telegram(
     # Una línea por mensaje lógico: antes del troceo y de los reintentos.
     if telegram_activity is not None:
         try:
-            telegram_activity.registrar(mensaje, referencia=referencia)
+            telegram_activity.registrar(mensaje, referencia=referencia, nivel=nivel)
         except Exception:
             pass
 
