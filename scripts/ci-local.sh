@@ -9,3 +9,4 @@ uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
 uv run --no-sync pytest -q
 bash .githooks/test-pre-push.sh
+bash .githooks/test-env-isolation.sh
