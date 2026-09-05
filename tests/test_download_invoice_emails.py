@@ -80,15 +80,27 @@ def test_pdf_filename_is_deterministic_and_safe():
 
 
 def test_build_message_uses_status_icon_and_direction_counts():
-    ok = build_message("2026-08",
-                       downloaded=[{"mailbox": "jesus82c", "tipo": "gastos"},
-                                   {"mailbox": "jesus82c", "tipo": "ingresos"}],
-                       skipped=[], review=[1, 2], errors=[], folder="C:\\x")
+    ok = build_message(
+        "2026-08",
+        downloaded=[
+            {"mailbox": "jesus82c", "tipo": "gastos"},
+            {"mailbox": "jesus82c", "tipo": "ingresos"},
+        ],
+        skipped=[],
+        review=[1, 2],
+        errors=[],
+        folder="C:\\x",
+    )
     assert ok.startswith("✅") and "2026-08" in ok and "revisar: 2" in ok
     assert "gastos 1" in ok and "ingresos 1" in ok
-    ko = build_message("2026-08", downloaded=[], skipped=[], review=[],
-                       errors=[{"mailbox": "j", "message_id": "m", "error": "boom"}],
-                       folder="C:\\x")
+    ko = build_message(
+        "2026-08",
+        downloaded=[],
+        skipped=[],
+        review=[],
+        errors=[{"mailbox": "j", "message_id": "m", "error": "boom"}],
+        folder="C:\\x",
+    )
     assert ko.startswith("❌") and "boom" in ko
 
 
@@ -99,8 +111,9 @@ def _raw(subject: str, pdf_name: str | None, sender: str = "billing@hostinger.co
     message["Subject"] = subject
     message.set_content("cuerpo")
     if pdf_name:
-        message.add_attachment(b"%PDF-1.7 x", maintype="application",
-                               subtype="pdf", filename=pdf_name)
+        message.add_attachment(
+            b"%PDF-1.7 x", maintype="application", subtype="pdf", filename=pdf_name
+        )
     return message.as_bytes()
 
 
@@ -123,17 +136,28 @@ class FakeGmail:
 
 
 def test_process_account_splits_gastos_ingresos_and_reports_review(tmp_path: Path):
-    gmail = FakeGmail({
-        "aaaa1111": (_raw("Tu factura de agosto", "factura.pdf"), ["INBOX"]),
-        "bbbb2222": (_raw("Fotos del finde", "fotos.pdf"), ["INBOX"]),
-        "cccc3333": (_raw("Factura 340 Aquisgran", "factura-340.pdf",
-                          sender="jesus82c@gmail.com"), ["SENT"]),
-        "dddd4444": (_raw("[Dr. Corno]: Novo pedido #814", "Fatura-TEST-8.pdf",
-                          sender="doctor@drcorno.com"), ["INBOX"]),
-    })
+    gmail = FakeGmail(
+        {
+            "aaaa1111": (_raw("Tu factura de agosto", "factura.pdf"), ["INBOX"]),
+            "bbbb2222": (_raw("Fotos del finde", "fotos.pdf"), ["INBOX"]),
+            "cccc3333": (
+                _raw("Factura 340 Aquisgran", "factura-340.pdf", sender="jesus82c@gmail.com"),
+                ["SENT"],
+            ),
+            "dddd4444": (
+                _raw(
+                    "[Dr. Corno]: Novo pedido #814",
+                    "Fatura-TEST-8.pdf",
+                    sender="doctor@drcorno.com",
+                ),
+                ["INBOX"],
+            ),
+        }
+    )
     mailbox = {"name": "jesus82c", "email": "jesus82c@gmail.com"}
-    result = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
-                             dest=tmp_path, force=False)
+    result = process_account(
+        gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
+    )
     assert len(result["downloaded"]) == 2 and not result["errors"]
     assert {e["tipo"] for e in result["downloaded"]} == {"gastos", "ingresos"}
     assert len(result["review"]) == 1 and result["review"][0]["subject"] == "Fotos del finde"
@@ -146,6 +170,7 @@ def test_process_account_splits_gastos_ingresos_and_reports_review(tmp_path: Pat
     assert len(gastos) == 1 and gastos[0].read_bytes().startswith(b"%PDF-")
     assert len(ingresos) == 1 and "factura-340" in ingresos[0].name
     # idempotencia: segunda pasada no re-descarga
-    again = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
-                            dest=tmp_path, force=False)
+    again = process_account(
+        gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
+    )
     assert len(again["skipped"]) == 2 and not again["downloaded"]

@@ -188,6 +188,7 @@ def iter_message_stubs(
 ) -> Iterator[dict]:
     """Pagina messages.list y produce id/threadId."""
 
+
 def get_raw_message(self, message_id: str) -> dict:
     """Devuelve messages.get(format=raw), incluidos metadatos y raw base64url."""
 ```

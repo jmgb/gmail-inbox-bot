@@ -536,3 +536,19 @@ docs/                  # documentación y specs
 En **producción** (VPS, autodeploy desde `main`): cliente Gmail funcional (lectura, clasificación,
 respuestas/reenvíos/labels/borradores), recordatorios diarios de Google Calendar, panel de admin y
 métricas en Supabase.
+
+
+## Local checks before pushing
+
+Install the versioned hook once in each clone:
+
+```bash
+git config --local core.hooksPath .githooks
+bash scripts/ci-local.sh
+```
+
+GitHub Actions invokes the same script. The hook rejects an uncommitted tree,
+a push of a commit other than the checked-out HEAD, failed checks, and edits
+made during validation. Deleting a ref does not run checks.
+The script selects Python 3.13 and the locked development dependencies,
+then runs Ruff lint, the format check and pytest.

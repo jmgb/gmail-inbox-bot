@@ -121,16 +121,16 @@ Devuelve eventos **normalizados** a un dict interno:
     "original_start": datetime | None,
     "status": str,
     "summary": str,
-    "start": datetime | None,      # None si all-day
+    "start": datetime | None,  # None si all-day
     "end": datetime | None,
     "all_day": bool,
-    "location": str,               # location del evento
-    "meet_link": str,              # hangoutLink / conferenceData / "" 
+    "location": str,  # location del evento
+    "meet_link": str,  # hangoutLink / conferenceData / ""
     "organizer": {"name": str, "email": str},
-    "my_response": str,            # responseStatus del asistente self (o "" )
+    "my_response": str,  # responseStatus del asistente self (o "" )
     "attendees": [
         {"name": str, "email": str, "response": str, "is_self": bool, "is_resource": bool},
-        ...
+        ...,
     ],
 }
 ```

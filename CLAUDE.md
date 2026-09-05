@@ -182,7 +182,7 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 Antes de hacer `git push`, ejecutar los mismos checks que correrá la GitHub Action y asegurar que pasan limpios:
 
 ```bash
-uv run ruff check . && uv run ruff format --check . && uv run pytest
+bash scripts/ci-local.sh
 ```
 
 No hacer push si alguno falla.

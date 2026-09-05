@@ -98,11 +98,23 @@ def test_pdf_filename_is_deterministic_and_safe():
 
 
 def test_build_message_uses_status_icon_and_counts():
-    ok = build_message("2026-08", downloaded=[{"mailbox": "jesus82c"}], skipped=[],
-                       review=[1, 2], errors=[], folder="C:\\x")
+    ok = build_message(
+        "2026-08",
+        downloaded=[{"mailbox": "jesus82c"}],
+        skipped=[],
+        review=[1, 2],
+        errors=[],
+        folder="C:\\x",
+    )
     assert ok.startswith("✅") and "2026-08" in ok and "revisar: 2" in ok
-    ko = build_message("2026-08", downloaded=[], skipped=[], review=[],
-                       errors=[{"mailbox": "j", "message_id": "m", "error": "boom"}], folder="C:\\x")
+    ko = build_message(
+        "2026-08",
+        downloaded=[],
+        skipped=[],
+        review=[],
+        errors=[{"mailbox": "j", "message_id": "m", "error": "boom"}],
+        folder="C:\\x",
+    )
     assert ko.startswith("❌") and "boom" in ko
 
 
@@ -113,8 +125,9 @@ def _raw(subject: str, pdf_name: str | None) -> bytes:
     message["Subject"] = subject
     message.set_content("cuerpo")
     if pdf_name:
-        message.add_attachment(b"%PDF-1.7 x", maintype="application",
-                               subtype="pdf", filename=pdf_name)
+        message.add_attachment(
+            b"%PDF-1.7 x", maintype="application", subtype="pdf", filename=pdf_name
+        )
     return message.as_bytes()
 
 
@@ -135,20 +148,24 @@ class FakeGmail:
 
 
 def test_process_account_downloads_invoices_skips_existing_and_reports_review(tmp_path: Path):
-    gmail = FakeGmail({
-        "aaaa1111": _raw("Tu factura de agosto", "factura.pdf"),
-        "bbbb2222": _raw("Fotos del finde", "fotos.pdf"),
-    })
+    gmail = FakeGmail(
+        {
+            "aaaa1111": _raw("Tu factura de agosto", "factura.pdf"),
+            "bbbb2222": _raw("Fotos del finde", "fotos.pdf"),
+        }
+    )
     mailbox = {"name": "jesus82c", "email": "jesus82c@gmail.com"}
-    result = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
-                             dest=tmp_path, force=False)
+    result = process_account(
+        gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
+    )
     assert len(result["downloaded"]) == 1 and not result["errors"]
     assert len(result["review"]) == 1 and result["review"][0]["subject"] == "Fotos del finde"
     saved = list((tmp_path / "jesus82c").glob("*.pdf"))
     assert len(saved) == 1 and saved[0].read_bytes().startswith(b"%PDF-")
     # idempotencia: segunda pasada no re-descarga
-    again = process_account(gmail=gmail, mailbox=mailbox, month="2026-08",
-                            dest=tmp_path, force=False)
+    again = process_account(
+        gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
+    )
     assert len(again["skipped"]) == 1 and not again["downloaded"]
 ```
 
@@ -194,8 +211,7 @@ from gmail_inbox_bot.telegram import enviar_mensaje_telegram  # noqa: E402
 
 MADRID = zoneinfo.ZoneInfo("Europe/Madrid")
 DEFAULT_DEST = Path("/mnt/c/Users/USER/Desktop/Facturas Doctor")
-KEYWORDS = ("factura", "invoice", "receipt", "recibo", "facture",
-            "fattura", "rechnung", "billing")
+KEYWORDS = ("factura", "invoice", "receipt", "recibo", "facture", "fattura", "rechnung", "billing")
 
 
 # ---------- helpers puros ----------
@@ -236,8 +252,10 @@ def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
         lines = [f"❌ Facturas email de {month}: {len(errors)} error(es), {total} OK ({detail})"]
         lines += [f"- {e['mailbox']} {e['message_id']}: {e['error']}" for e in errors[:10]]
     else:
-        lines = [f"✅ Facturas email de {month}: {total} ({detail}); "
-                 f"nuevas {len(downloaded)}, ya existentes {len(skipped)}"]
+        lines = [
+            f"✅ Facturas email de {month}: {total} ({detail}); "
+            f"nuevas {len(downloaded)}, ya existentes {len(skipped)}"
+        ]
     if review:
         lines.append(f"Emails con PDF sin pinta de factura, a revisar: {len(review)} (revisar.csv)")
     lines.append(f"Carpeta: {folder}")
@@ -258,25 +276,39 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
             sender = parseaddr(str(parsed.get("From", "")))[1]
             stamp = int(raw.get("internalDate", "0")) // 1000
             date_iso = dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc).isoformat()
-            pdf_names = [p.get_filename() or "" for p in parsed.walk()
-                         if p.get_content_type().lower() == "application/pdf"]
+            pdf_names = [
+                p.get_filename() or ""
+                for p in parsed.walk()
+                if p.get_content_type().lower() == "application/pdf"
+            ]
             if not is_invoice_candidate(subject, pdf_names):
-                review.append({"mailbox": name, "date": date_iso[:10],
-                               "sender": sender, "subject": subject})
+                review.append(
+                    {"mailbox": name, "date": date_iso[:10], "sender": sender, "subject": subject}
+                )
                 continue
-            artifacts = extract_artifacts(raw["raw_bytes"], out_dir,
-                                          filename_prefix=".tmp_extract_")
+            artifacts = extract_artifacts(
+                raw["raw_bytes"], out_dir, filename_prefix=".tmp_extract_"
+            )
             for artifact in artifacts:
                 if artifact.kind != "pdf":
                     artifact.path.unlink(missing_ok=True)
                     continue
-                final = out_dir / pdf_filename(internal_date_iso=date_iso, sender=sender,
-                                               message_id=message_id,
-                                               original=artifact.filename)
-                entry = {"mailbox": name, "date": date_iso[:10], "sender": sender,
-                         "subject": subject, "message_id": message_id,
-                         "file": final.name, "size": artifact.size_bytes,
-                         "sha256": artifact.sha256}
+                final = out_dir / pdf_filename(
+                    internal_date_iso=date_iso,
+                    sender=sender,
+                    message_id=message_id,
+                    original=artifact.filename,
+                )
+                entry = {
+                    "mailbox": name,
+                    "date": date_iso[:10],
+                    "sender": sender,
+                    "subject": subject,
+                    "message_id": message_id,
+                    "file": final.name,
+                    "size": artifact.size_bytes,
+                    "sha256": artifact.sha256,
+                }
                 if final.exists() and final.stat().st_size > 0 and not force:
                     artifact.path.unlink(missing_ok=True)
                     skipped.append(entry)
@@ -284,8 +316,9 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
                     artifact.path.replace(final)
                     downloaded.append(entry)
         except Exception as exc:  # noqa: BLE001 — un email malo no para la pasada
-            errors.append({"mailbox": name, "message_id": message_id,
-                           "error": f"{type(exc).__name__}: {exc}"})
+            errors.append(
+                {"mailbox": name, "message_id": message_id, "error": f"{type(exc).__name__}: {exc}"}
+            )
             print(f"[{name}] {message_id}: {exc}", file=sys.stderr)
     return {"downloaded": downloaded, "skipped": skipped, "review": review, "errors": errors}
 
@@ -307,11 +340,13 @@ def windows_path(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--month", help="YYYY-MM (por defecto, el mes anterior)")
-    parser.add_argument("--mailbox", action="append",
-                        help="nombre o email; repetible (por defecto, todas)")
+    parser.add_argument(
+        "--mailbox", action="append", help="nombre o email; repetible (por defecto, todas)"
+    )
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST)
     parser.add_argument("--dry-run", action="store_true", help="lista sin descargar")
     parser.add_argument("--force", action="store_true")
@@ -322,24 +357,25 @@ def main() -> int:
     dest = args.dest / month / "email"
     boxes = load_mailbox_configs()
     if args.mailbox:
-        boxes = [b for b in boxes
-                 if {b.get("name"), b.get("email")} & set(args.mailbox)]
+        boxes = [b for b in boxes if {b.get("name"), b.get("email")} & set(args.mailbox)]
         if not boxes:
             print("ningún mailbox coincide", file=sys.stderr)
             return 2
 
     totals = {"downloaded": [], "skipped": [], "review": [], "errors": []}
     for mailbox in boxes:
-        gmail = _build_gmail_client(env, mailbox, request_rate_per_second=3.0,
-                                    request_retries=5)
+        gmail = _build_gmail_client(env, mailbox, request_rate_per_second=3.0, request_retries=5)
         try:
             if args.dry_run:
                 count = sum(1 for _ in gmail.iter_message_stubs(query=gmail_query(month)))
-                print(f"[{mailbox['name']}] {count} emails con PDF en {month} "
-                      f"(query: {gmail_query(month)})")
+                print(
+                    f"[{mailbox['name']}] {count} emails con PDF en {month} "
+                    f"(query: {gmail_query(month)})"
+                )
                 continue
-            result = process_account(gmail=gmail, mailbox=mailbox, month=month,
-                                     dest=dest, force=args.force)
+            result = process_account(
+                gmail=gmail, mailbox=mailbox, month=month, dest=dest, force=args.force
+            )
             for key in totals:
                 totals[key] += result[key]
         finally:
@@ -347,14 +383,21 @@ def main() -> int:
     if args.dry_run:
         return 0
 
-    write_csv(dest / "indice_email.csv", totals["downloaded"] + totals["skipped"],
-              ["mailbox", "date", "sender", "subject", "message_id", "file", "size", "sha256"])
+    write_csv(
+        dest / "indice_email.csv",
+        totals["downloaded"] + totals["skipped"],
+        ["mailbox", "date", "sender", "subject", "message_id", "file", "size", "sha256"],
+    )
     if totals["review"]:
-        write_csv(dest / "revisar.csv", totals["review"],
-                  ["mailbox", "date", "sender", "subject"])
-    message = build_message(month, downloaded=totals["downloaded"], skipped=totals["skipped"],
-                            review=totals["review"], errors=totals["errors"],
-                            folder=windows_path(dest))
+        write_csv(dest / "revisar.csv", totals["review"], ["mailbox", "date", "sender", "subject"])
+    message = build_message(
+        month,
+        downloaded=totals["downloaded"],
+        skipped=totals["skipped"],
+        review=totals["review"],
+        errors=totals["errors"],
+        folder=windows_path(dest),
+    )
     print(message)
     if args.notify:
         try:
