@@ -36,11 +36,23 @@ ALTER TABLE email_metrics
     ADD COLUMN IF NOT EXISTS total_cost_usd  DOUBLE PRECISION,
     ADD COLUMN IF NOT EXISTS llm_provider    TEXT;
 
+-- Migración idempotente: clasificación sombra con Jev (TypeSafe.ai).
+-- Ejecutar ANTES de desplegar el código que las escribe; si no, PostgREST devuelve 400
+-- y se pierde la fila entera de métricas de ese email.
+ALTER TABLE email_metrics
+    ADD COLUMN IF NOT EXISTS jev_category      TEXT,
+    ADD COLUMN IF NOT EXISTS jev_confidence    DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS jev_probabilities JSONB,
+    ADD COLUMN IF NOT EXISTS jev_latency_ms    INTEGER,
+    ADD COLUMN IF NOT EXISTS jev_model         TEXT,
+    ADD COLUMN IF NOT EXISTS jev_error         TEXT;
+
 -- Índices para consultas frecuentes del dashboard
 CREATE INDEX IF NOT EXISTS idx_email_metrics_created_at ON email_metrics (created_at);
 CREATE INDEX IF NOT EXISTS idx_email_metrics_mailbox ON email_metrics (mailbox);
 CREATE INDEX IF NOT EXISTS idx_email_metrics_category ON email_metrics (category);
 CREATE INDEX IF NOT EXISTS idx_email_metrics_msg_id ON email_metrics (msg_id);
+CREATE INDEX IF NOT EXISTS idx_email_metrics_jev_category ON email_metrics (jev_category);
 
 -- Habilitar RLS (Row Level Security) — acceso solo con service_role key
 ALTER TABLE email_metrics ENABLE ROW LEVEL SECURITY;
