@@ -153,6 +153,7 @@ def _aggregate(rows: list[dict]) -> dict:
 
 
 def _pct(part: int, whole: int) -> float:
+    """Porcentaje redondeado a un decimal; 0.0 si el denominador es cero."""
     return round(100.0 * part / whole, 1) if whole else 0.0
 
 
