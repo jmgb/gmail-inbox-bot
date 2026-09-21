@@ -1,11 +1,13 @@
 """Tests for jev_shadow — clasificación sombra con Jev (TypeSafe.ai)."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx2
 import yaml
-from typesafe_sdk import Choice, RetryPolicy
+from typesafe_sdk import Choice, TypeSafeClient
 
 from gmail_inbox_bot import jev_shadow
 from gmail_inbox_bot.jev_shadow import (
@@ -86,23 +88,39 @@ class TestBuildJevShadow:
         assert build_jev_shadow({}, CRITERIA_PATH) is None
         assert build_jev_shadow({"JEV_API_KEY": ""}, CRITERIA_PATH) is None
 
-    def test_builds_client_with_key(self, monkeypatch):
-        captured = {}
+    def test_real_sdk_bounds_request_body_timeout_and_retries(self, monkeypatch):
+        attempts = []
 
-        def fake_client(**kwargs):
-            captured.update(kwargs)
-            return MagicMock(name="jev-client")
+        def respond(request):
+            attempts.append(request)
+            raise httpx2.ReadTimeout("deliberate timeout", request=request)
 
-        monkeypatch.setattr(jev_shadow, "TypeSafeClient", fake_client)
+        def client(**kwargs):
+            return TypeSafeClient(**kwargs, transport=httpx2.MockTransport(respond))
+
+        monkeypatch.setattr(jev_shadow, "TypeSafeClient", client)
         shadow = build_jev_shadow({"JEV_API_KEY": "apikey_test"}, CRITERIA_PATH)
-        assert isinstance(shadow, JevShadow)
-        assert captured["api_key"] == "apikey_test"
-        assert captured["timeout"] == jev_shadow.JEV_TIMEOUT_SECONDS
-        assert isinstance(captured["retry"], RetryPolicy)
-        assert captured["retry"].max_retries == 1
-        expected = set(yaml.safe_load(CRITERIA_PATH.read_text(encoding="utf-8")))
-        assert set(shadow.question.criteria) == expected
-        assert len(expected) == 8
+
+        result = shadow.classify(
+            subject="s",
+            body_text="z" * 6500,
+            sender_name="n",
+            sender_address="a@example.test",
+            has_attachments=False,
+        )
+
+        assert len(attempts) == 2
+        for request in attempts:
+            assert request.extensions["timeout"] == {
+                "connect": 8.0,
+                "read": 8.0,
+                "write": 8.0,
+                "pool": 8.0,
+            }
+            payload = json.loads(request.content)
+            assert payload["state"].split("Contenido del email:\n", 1)[1] == "z" * 6000
+        assert result["jev_error"].startswith("TypeSafeAPITimeoutError:")
+        assert "jev_category" not in result
 
 
 class TestClassify:

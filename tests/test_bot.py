@@ -1,8 +1,10 @@
 """Tests for bot.py — the polling orchestrator."""
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typesafe_sdk import Choice
 
 from gmail_inbox_bot.bot import (
     _build_gmail_client,
@@ -12,6 +14,8 @@ from gmail_inbox_bot.bot import (
     process_mailbox,
 )
 from gmail_inbox_bot.classifier import GPT_OSS_120B
+from gmail_inbox_bot.jev_shadow import JevShadow
+from gmail_inbox_bot.telegram_logger import TelegramHandler
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -307,32 +311,35 @@ class TestProcessEmail:
         assert not any(key.startswith("jev_") for key in recorded)
 
     @patch("gmail_inbox_bot.bot.record_email")
-    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
     @patch(
         "gmail_inbox_bot.bot.classify_email",
         return_value={"categoria": "spam", "razon_clasificacion": ""},
     )
-    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-    def test_jev_shadow_error_is_recorded_without_log(
-        self, _mock_load, _mock_classify, mock_execute, mock_record, mock_gmail, config, caplog
+    def test_jev_failure_preserves_action_without_telegram(
+        self, _mock_classify, mock_record, mock_gmail, config, monkeypatch
     ):
-        jev = MagicMock()
-        jev.classify.return_value = {
-            "jev_error": "TypeSafeAPITimeoutError: timeout",
-            "jev_latency_ms": 8000,
-        }
-
-        with caplog.at_level("INFO", logger="gmail_inbox_bot.bot"):
+        client = MagicMock()
+        client.system_one.side_effect = RuntimeError("x" * 500)
+        jev = JevShadow(
+            client=client, question=Choice(instructions="q", criteria={"spam": "x", "otros": "y"})
+        )
+        telegram = MagicMock()
+        monkeypatch.setattr("gmail_inbox_bot.telegram_logger.enviar_mensaje_telegram", telegram)
+        logger = logging.getLogger("gmail_inbox_bot")
+        handler = TelegramHandler()
+        logger.addHandler(handler)
+        try:
             _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+        finally:
+            logger.removeHandler(handler)
+            handler.close()
 
-        mock_execute.assert_called_once()
+        mock_gmail.update_email.assert_called_once_with(config["email"], "msg_001", is_read=True)
+        telegram.assert_not_called()
         recorded = mock_record.call_args.kwargs
-        assert recorded["jev_error"] == "TypeSafeAPITimeoutError: timeout"
-        assert recorded["jev_latency_ms"] == 8000
+        assert recorded["category"] == "spam"
+        assert recorded["jev_error"] == "RuntimeError: " + "x" * 186
         assert "jev_category" not in recorded
-        # El pipeline sí loguea (línea del paso 6); solo falta la comparativa Jev.
-        assert caplog.records
-        assert not any("Jev sombra" in record.message for record in caplog.records)
 
 
 # ------------------------------------------------------------------
