@@ -1,0 +1,106 @@
+# Criterios de clasificación para Jev (TypeSafe.ai) — modo sombra.
+# Una entrada por categoría, mismas claves que `routing` en config/*.yml.
+# Cada categoría: what (qué abarca), not_for (qué excluye), examples (casos reales).
+# Mientras dure la sombra, cada regla nueva del prompt LLM se replica aquí.
+
+personal:
+  what: >
+    Email directo de una persona real que espera una respuesta o acción del usuario:
+    conversaciones, preguntas, propuestas, solicitudes personales o profesionales dirigidas
+    a él. También avisos de servicios que exigen una acción urgente o importante del usuario
+    ("Signature Required", "Action Required", "Please review").
+  not_for: >
+    Notificaciones automáticas aunque el remitente sea conocido; newsletters o boletines;
+    prospección comercial de desconocidos ofreciendo servicios (eso es spam); avisos rutinarios
+    de apps sin urgencia (eso es notificaciones). En caso de duda entre notificaciones y
+    personal, elegir personal.
+  examples:
+    - "Un contacto escribe preguntando si podemos vernos la semana que viene"
+    - "Un cliente pide presupuesto o responde a un hilo anterior"
+    - "DocuSign: 'Signature Required' en un contrato que el usuario debe firmar hoy"
+
+finanzas:
+  what: >
+    Emails de bancos, brokers, pasarelas de pago, facturas, recibos, movimientos de cuenta,
+    transferencias, impuestos y seguros. Cualquier contenido relacionado con dinero que
+    requiera verificación o acción. El remitente bancario o de broker es señal suficiente
+    aunque el cuerpo esté vacío o solo tenga firma legal.
+  not_for: >
+    Publicidad de productos financieros (eso es spam); confirmaciones de compra en tiendas
+    online (eso es compras).
+  examples:
+    - "Remitente bbva.es o santander con asunto 'Movimiento en tu cuenta' y cuerpo vacío"
+    - "interactivebrokers.com o degiro: notificación de operación ejecutada"
+    - "Factura mensual de un proveedor con PDF adjunto"
+    - "Agencia Tributaria: notificación de liquidación"
+
+compras:
+  what: >
+    Confirmaciones de pedido, seguimiento de envío, recibos de compra, devoluciones y
+    notificaciones de e-commerce (Amazon, tiendas online, marketplaces).
+  not_for: >
+    Publicidad, ofertas o catálogos de una tienda (eso es spam); recibos bancarios o de
+    tarjeta (eso es finanzas).
+  examples:
+    - "Amazon: 'Tu pedido ha sido enviado' con número de seguimiento"
+    - "Tienda online: confirmación de devolución aceptada"
+
+newsletters:
+  what: >
+    Newsletters, boletines, digests y resúmenes periódicos a los que el usuario se suscribió
+    voluntariamente: contenido editorial o informativo recurrente de productos que usa o
+    servicios contratados. Suelen tener enlace de unsubscribe.
+  not_for: >
+    Marketing no solicitado o de empresa desconocida aunque tenga enlace de unsubscribe
+    (eso es spam). En caso de duda entre spam y newsletters, elegir spam.
+  examples:
+    - "Boletín semanal de un SaaS que el usuario tiene contratado"
+    - "Digest diario de una comunidad a la que el usuario se apuntó"
+
+notificaciones:
+  what: >
+    Alertas y notificaciones rutinarias de aplicaciones, redes sociales y servicios online:
+    GitHub, LinkedIn, Google, calendarios, apps móviles. Avisos informativos que no exigen
+    una acción urgente ni personal.
+  not_for: >
+    Avisos que requieren acción urgente o personal del usuario (eso es personal);
+    respuestas automáticas sin ninguna acción (eso es automatico).
+  examples:
+    - "LinkedIn: 'Tienes 3 nuevas visitas a tu perfil'"
+    - "Google Calendar: invitación aceptada"
+    - "Servicio SaaS: 'Please review your monthly report' rutinario"
+
+automatico:
+  what: >
+    Respuestas automáticas de fuera de oficina en cualquier idioma, emails desde direcciones
+    noreply@ y confirmaciones de sistema que no requieren ninguna acción.
+  not_for: >
+    Cualquier email que requiera una acción del usuario, aunque venga de noreply@ (eso es
+    personal o notificaciones según urgencia).
+  examples:
+    - "Out of office: 'Estaré ausente hasta el lunes'"
+    - "noreply@servicio.com: 'Tu contraseña se ha cambiado correctamente'"
+
+spam:
+  what: >
+    Publicidad no solicitada, promociones, marketing masivo, ofertas comerciales y
+    prospección B2B de desconocidos ofreciendo servicios, partnerships, demos o pipeline.
+    Patrón típico: nombre personal + dominio desconocido + asunto genérico dirigido al usuario.
+  not_for: >
+    Boletines a los que el usuario se suscribió voluntariamente (eso es newsletters);
+    confirmaciones de pedidos reales (eso es compras).
+  examples:
+    - "'Question for Jesús' desde un dominio desconocido ofreciendo servicios de leads"
+    - "'[nombre], quick question regarding your pipeline'"
+    - "Oferta de tarjeta de crédito de una entidad con la que el usuario no tiene relación"
+
+otros:
+  what: >
+    El email no encaja claramente en ninguna otra categoría. Es el fallback seguro cuando
+    no hay certeza: remitente desconocido sin cuerpo útil, contenido ambiguo o incompleto.
+  not_for: >
+    Emails que sí encajan con claridad en otra categoría, incluso con cuerpo vacío si el
+    remitente es reconocible (banco → finanzas, tienda → compras).
+  examples:
+    - "Remitente desconocido, asunto vacío y cuerpo con solo una firma legal"
+    - "Email en un idioma no identificable sin contexto"
