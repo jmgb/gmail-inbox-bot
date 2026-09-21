@@ -51,7 +51,8 @@ Activación: global, si `JEV_API_KEY` está definida en el entorno. Si falta, el
 `None`, se loguea una vez al arrancar (`log.info`) y el resto del flujo no cambia. No hay flag
 por mailbox.
 
-En `dry_run` Jev se ejecuta (es solo lectura) pero, como hoy, no se persisten métricas.
+En `dry_run` Jev se ejecuta (es solo lectura). Las métricas se persisten igual que hoy
+(`record_email` no distingue `dry_run`), así que los campos `jev_*` también.
 
 ### 2. Módulo `gmail_inbox_bot/jev_shadow.py`
 

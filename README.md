@@ -160,6 +160,10 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   **OpenAI** (`OPENAI_API_KEY`).
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
+- **Sombra con Jev (TypeSafe.ai)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
+  también cada email con Jev (`typesafe-sdk`, primitiva `Choice`) y guarda categoría, confianza y
+  probabilidades en `email_metrics` (`jev_*`) sin influir en el routing. Comparativa en
+  `/admin/dashboard`, sección "Jev vs LLM". Criterios en `gmail_inbox_bot/prompts/clasificador_jev.yml`.
 - **Salida inválida**: JSON ilegible también activa el fallback y queda contabilizado como intento.
 - **Razonamiento**: Luna usa `max` cuando es el modelo primario efectivo. Si la llamada empieza en
   Groq, no se fuerza esfuerzo para no encarecer el camino normal; el paquete no permite aplicar `max`
@@ -312,6 +316,7 @@ templates: { categoria: { esp: "...", pt: "..." } } # respuestas fijas
 | `GOOGLE_REFRESH_TOKEN_<CUENTA>` | Refresh token por cuenta (referenciado en el YAML) |
 | `OPENAI_API_KEY` | LLM (clasificación, dynamic_reply, fallback) |
 | `GROQ_API_KEY` | LLM por defecto (`gpt-oss-120b`) |
+| `JEV_API_KEY` | Opcional. Activa la clasificación sombra con Jev (TypeSafe.ai); ver `CLAUDE.md` |
 | `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Notificaciones (opcional) |
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Métricas (opcional) |
 | `LOGS_VIEWER_PASSWORD` | Password del visor de logs |

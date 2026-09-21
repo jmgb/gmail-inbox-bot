@@ -149,6 +149,18 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 - Preferir reglas por remitente/dominio (más fiables) sobre reglas por contenido del body
 - Documentar el caso real que motivó cada regla
 
+**Clasificación sombra con Jev (TypeSafe.ai)** — `gmail_inbox_bot/jev_shadow.py`. Si `JEV_API_KEY`
+está en el `.env`, cada email clasificado por el LLM se clasifica también con Jev y el resultado
+(`jev_category`, `jev_confidence`, `jev_probabilities`, `jev_latency_ms`, `jev_model`, `jev_error`)
+se guarda en la misma fila de `email_metrics`. Jev **no decide nada** en esta fase; la comparativa
+está en `/admin/dashboard` (sección "Jev vs LLM"). Los criterios de Jev viven en
+`gmail_inbox_bot/prompts/clasificador_jev.yml` (una entrada por categoría con `what` / `not_for` /
+`examples`, mismas claves que `routing`; un test comprueba la paridad). Ambos clasificadores reciben
+el mismo texto (`email_format.format_email_for_classifier`). **Mientras dure la sombra, cada regla
+nueva del prompt LLM se replica en el YAML de Jev.** Si el YAML falta o es inválido el bot falla al
+arrancar (error de despliegue, a propósito). Diseño:
+`docs/superpowers/specs/2026-09-21-jev-shadow-classification-design.md`.
+
 ## Despliegue
 
 - **VPS**: `158.69.215.223` (usuario `ubuntu`)
@@ -167,6 +179,8 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 - **Lectura**: dashboard vía `/admin/api/metrics`
 - **SQL migrations**: `scripts/supabase_create_table.sql`
 - **SQL runner**: `uv run python scripts/supabase_sql.py "SELECT ..."`
+- **Columnas `jev_*`**: clasificación sombra de Jev; migración en `scripts/supabase_create_table.sql`
+  (aplicar antes de desplegar código que las escriba, o el upsert devuelve 400 y se pierde la fila).
 
 ## Comandos
 
