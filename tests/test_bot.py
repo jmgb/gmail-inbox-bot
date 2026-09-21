@@ -306,6 +306,34 @@ class TestProcessEmail:
         recorded = mock_record.call_args.kwargs
         assert not any(key.startswith("jev_") for key in recorded)
 
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": ""},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_error_is_recorded_without_log(
+        self, _mock_load, _mock_classify, mock_execute, mock_record, mock_gmail, config, caplog
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_error": "TypeSafeAPITimeoutError: timeout",
+            "jev_latency_ms": 8000,
+        }
+
+        with caplog.at_level("INFO", logger="gmail_inbox_bot.bot"):
+            _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+
+        mock_execute.assert_called_once()
+        recorded = mock_record.call_args.kwargs
+        assert recorded["jev_error"] == "TypeSafeAPITimeoutError: timeout"
+        assert recorded["jev_latency_ms"] == 8000
+        assert "jev_category" not in recorded
+        # El pipeline sí loguea (línea del paso 6); solo falta la comparativa Jev.
+        assert caplog.records
+        assert not any("Jev sombra" in record.message for record in caplog.records)
+
 
 # ------------------------------------------------------------------
 # process_mailbox

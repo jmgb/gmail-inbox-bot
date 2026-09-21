@@ -233,6 +233,8 @@ def _process_email(
         )
         return "classification failed — tagged ERROR IA"
 
+    categoria = classification.get("categoria", "")
+
     # 4b. Clasificación sombra con Jev (no decide nada, solo se registra)
     jev_result: dict = {}
     if jev is not None:
@@ -244,20 +246,18 @@ def _process_email(
             has_attachments=has_attachments,
         )
         if "jev_category" in jev_result:
-            llm_category = classification.get("categoria", "")
-            verdict = "coinciden" if jev_result["jev_category"] == llm_category else "DIFIEREN"
+            verdict = "coinciden" if jev_result["jev_category"] == categoria else "DIFIEREN"
             log.info(
                 "[%s] 🕶️ Jev sombra: jev=%s (conf=%.2f) | llm=%s | %s | %dms",
                 msg_id,
                 jev_result["jev_category"],
                 jev_result["jev_confidence"],
-                llm_category,
+                categoria,
                 verdict,
                 jev_result["jev_latency_ms"],
             )
 
     # 5. Notify important emails
-    categoria = classification.get("categoria", "")
     if categoria in NOTIFY_CATEGORIES:
         notify_important_email(
             mailbox=config.get("email", ""),
