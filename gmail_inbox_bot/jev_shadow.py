@@ -9,6 +9,7 @@ Nunca propaga excepciones: cualquier fallo se convierte en ``jev_error``.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from pathlib import Path
 import yaml
 from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
 
+from .email_format import format_email_for_classifier
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.jev_shadow", "logs/app.log")
@@ -48,20 +50,21 @@ def build_state(
     has_attachments: bool,
 ) -> str:
     """Mismo contenido que el ``user_content`` del clasificador LLM, sin la orden de JSON."""
-    return (
-        f"Título del email: {subject}\n\n"
-        f"¿Contiene archivo adjunto?: {has_attachments}\n\n"
-        f"Remitente: {sender_name} <{sender_address}>\n\n"
-        f"Contenido del email:\n{body_text[:JEV_MAX_BODY_CHARS]}"
+    return format_email_for_classifier(
+        subject=subject,
+        body_text=body_text[:JEV_MAX_BODY_CHARS],
+        sender_name=sender_name,
+        sender_address=sender_address,
+        has_attachments=has_attachments,
     )
 
 
 @dataclass(frozen=True)
 class JevShadow:
-    """Cliente Jev + criterios cargados una vez por arranque."""
+    """Cliente Jev + pregunta ``Choice`` construida una vez por arranque."""
 
     client: TypeSafeClient
-    criteria: Mapping[str, object]
+    question: Choice
 
     def classify(
         self,
@@ -74,17 +77,16 @@ class JevShadow:
     ) -> dict:
         """Devuelve ``{jev_category, jev_confidence, jev_probabilities, jev_latency_ms, jev_model}``
         o ``{jev_error, jev_latency_ms}``. Nunca lanza."""
-        state = build_state(
-            subject=subject,
-            body_text=body_text,
-            sender_name=sender_name,
-            sender_address=sender_address,
-            has_attachments=has_attachments,
-        )
-        question = Choice(instructions=JEV_INSTRUCTIONS, criteria=self.criteria)
         started = time.perf_counter()
         try:
-            response = self.client.system_one(state, {"categoria": question})
+            state = build_state(
+                subject=subject,
+                body_text=body_text,
+                sender_name=sender_name,
+                sender_address=sender_address,
+                has_attachments=has_attachments,
+            )
+            response = self.client.system_one(state, {"categoria": self.question})
             answer = response.choices["categoria"]
             return {
                 "jev_category": answer.choice,
@@ -106,19 +108,25 @@ class JevShadow:
 def build_jev_shadow(
     env: Mapping[str, str], criteria_path: str | Path = DEFAULT_CRITERIA_PATH
 ) -> JevShadow | None:
-    """Construye el cliente Jev si hay ``JEV_API_KEY``; si no, ``None`` (sombra desactivada)."""
+    """Construye el cliente Jev si hay ``JEV_API_KEY``; si no, ``None`` (sombra desactivada).
+
+    Lanza si el YAML falta o no es válido para el SDK; es un error de despliegue, no de Jev.
+    """
     api_key = env.get("JEV_API_KEY", "")
     if not api_key:
         log.info("JEV_API_KEY no definida — clasificación sombra con Jev desactivada")
         return None
+    criteria = load_criteria(criteria_path)
+    question = Choice(instructions=JEV_INSTRUCTIONS, criteria=criteria)
     client = TypeSafeClient(
         api_key=api_key,
         timeout=JEV_TIMEOUT_SECONDS,
         retry=RetryPolicy(max_retries=JEV_MAX_RETRIES),
     )
-    criteria = load_criteria(criteria_path)
+    # El SDK loguea cada reintento a INFO y propaga a root: solo queremos avisos.
+    logging.getLogger("typesafe_sdk").setLevel(logging.WARNING)
     log.info("Clasificación sombra con Jev activada (%d categorías)", len(criteria))
-    return JevShadow(client=client, criteria=criteria)
+    return JevShadow(client=client, question=question)
 
 
 def _elapsed_ms(started: float) -> int:

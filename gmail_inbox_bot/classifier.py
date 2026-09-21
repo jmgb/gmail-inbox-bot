@@ -12,6 +12,7 @@ from llm_gateway import (
     RetryPolicy,
 )
 
+from .email_format import format_email_for_classifier
 from .llm_costs import build_cost_metadata
 from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
@@ -125,11 +126,14 @@ def classify_email(
     model: str = DEFAULT_MODEL,
 ) -> dict | None:
     user_content = (
-        f"Título del email: {subject}\n\n"
-        f"¿Contiene archivo adjunto?: {has_attachments}\n\n"
-        f"Remitente: {sender_name} <{sender_address}>\n\n"
-        f"Contenido del email:\n{body_text}\n\n"
-        "Responde en formato JSON."
+        format_email_for_classifier(
+            subject=subject,
+            body_text=body_text,
+            sender_name=sender_name,
+            sender_address=sender_address,
+            has_attachments=has_attachments,
+        )
+        + "\n\nResponde en formato JSON."
     )
 
     try:

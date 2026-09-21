@@ -5,9 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import yaml
+from typesafe_sdk import Choice, RetryPolicy
 
 from gmail_inbox_bot import jev_shadow
+from gmail_inbox_bot.email_format import format_email_for_classifier
 from gmail_inbox_bot.jev_shadow import (
+    JEV_ERROR_MAX_CHARS,
     JEV_MAX_BODY_CHARS,
     JevShadow,
     build_jev_shadow,
@@ -77,6 +80,16 @@ class TestBuildState:
         )
         assert state.count("x") == JEV_MAX_BODY_CHARS
 
+    def test_matches_llm_classifier_format(self):
+        kwargs = dict(
+            subject="Hola",
+            body_text="Cuerpo corto",
+            sender_name="Juan",
+            sender_address="juan@x.com",
+            has_attachments=False,
+        )
+        assert build_state(**kwargs) == format_email_for_classifier(**kwargs)
+
 
 class TestBuildJevShadow:
     def test_returns_none_without_key(self):
@@ -95,12 +108,17 @@ class TestBuildJevShadow:
         assert isinstance(shadow, JevShadow)
         assert captured["api_key"] == "apikey_test"
         assert captured["timeout"] == jev_shadow.JEV_TIMEOUT_SECONDS
-        assert "otros" in shadow.criteria
+        assert isinstance(captured["retry"], RetryPolicy)
+        assert captured["retry"].max_retries == 1
+        expected = set(yaml.safe_load(CRITERIA_PATH.read_text(encoding="utf-8")))
+        assert set(shadow.question.criteria) == expected
+        assert len(expected) == 8
 
 
 class TestClassify:
     def _shadow(self, client):
-        return JevShadow(client=client, criteria={"spam": "x", "otros": "y"})
+        question = Choice(instructions="q", criteria={"spam": "x", "otros": "y"})
+        return JevShadow(client=client, question=question)
 
     def test_maps_response_to_dict(self):
         client = MagicMock()
@@ -122,7 +140,8 @@ class TestClassify:
     def test_sends_state_and_choice_question(self):
         client = MagicMock()
         client.system_one.return_value = _fake_response()
-        self._shadow(client).classify(
+        shadow = self._shadow(client)
+        shadow.classify(
             subject="Oferta",
             body_text="Compra ya",
             sender_name="",
@@ -132,7 +151,7 @@ class TestClassify:
         state, questions = client.system_one.call_args.args
         assert "Título del email: Oferta" in state
         assert list(questions) == ["categoria"]
-        assert questions["categoria"].criteria == {"spam": "x", "otros": "y"}
+        assert questions["categoria"] is shadow.question
 
     def test_exception_becomes_jev_error(self):
         client = MagicMock()
@@ -170,4 +189,17 @@ class TestClassify:
             sender_address="a@b.c",
             has_attachments=False,
         )
-        assert len(result["jev_error"]) == 200
+        assert len(result["jev_error"]) == JEV_ERROR_MAX_CHARS
+
+    def test_build_state_failure_becomes_jev_error(self):
+        client = MagicMock()
+        result = self._shadow(client).classify(
+            subject="s",
+            body_text=None,
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+        assert result["jev_error"].startswith("TypeError")
+        assert isinstance(result["jev_latency_ms"], int)
+        client.system_one.assert_not_called()
