@@ -692,6 +692,13 @@
           <div class="section-title">Distribución por Categorías</div>
         </div>
         <div class="tables-grid" id="tablesContainer"></div>
+
+        <div class="section-header">
+          <div class="section-title">Jev vs LLM (clasificación sombra)</div>
+        </div>
+        <div class="cards" id="jevCards"></div>
+        <div class="tables-grid" id="jevTables"></div>
+        <div class="table-card" id="jevMismatches"></div>
       </div>
 
       <div class="error-msg" id="errorState" style="display: none"></div>
@@ -751,6 +758,7 @@
 
           const data = await res.json();
           renderDashboard(data);
+          fetchJevShadow(params);
         } catch (err) {
           document.getElementById("loadingState").style.display = "none";
           document.getElementById("errorState").style.display = "flex";
@@ -915,6 +923,133 @@
         });
 
         container.innerHTML = html;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function fmtPct(p) {
+        return `${Number(p).toFixed(1)}%`;
+      }
+
+      function fmtConf(c) {
+        return c === null || c === undefined ? "—" : Number(c).toFixed(2);
+      }
+
+      async function fetchJevShadow(params) {
+        const tables = document.getElementById("jevTables");
+        try {
+          const res = await fetch(`/admin/api/jev_shadow?${params.toString()}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          renderJev(await res.json());
+        } catch (err) {
+          document.getElementById("jevCards").replaceChildren();
+          document.getElementById("jevMismatches").replaceChildren();
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = `Comparativa Jev no disponible: ${err.message}`;
+          tables.replaceChildren(empty);
+        }
+      }
+
+      function renderJev(data) {
+        const cards = document.getElementById("jevCards");
+        const tables = document.getElementById("jevTables");
+        const mismatches = document.getElementById("jevMismatches");
+
+        if (!data.total && !data.errors) {
+          cards.replaceChildren();
+          mismatches.replaceChildren();
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = "Sin clasificaciones sombra de Jev en este periodo";
+          tables.replaceChildren(empty);
+          return;
+        }
+
+        cards.innerHTML = `
+          <div class="card">
+            <div class="card-label">Emails comparados</div>
+            <div class="card-value total">${fmtNum(data.total)}</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Coincidencia Jev / LLM</div>
+            <div class="card-value">${fmtPct(data.agreement_pct)}</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Errores Jev</div>
+            <div class="card-value">${fmtNum(data.errors)}</div>
+          </div>`;
+
+        let bucketRows = "";
+        data.by_confidence.forEach((b) => {
+          bucketRows += `<tr><td>${escapeHtml(b.label)}</td><td class="count-cell">${fmtNum(b.n)}</td><td class="count-cell">${fmtPct(b.agreement_pct)}</td></tr>`;
+        });
+
+        const cats = data.categories.map(escapeHtml);
+        const header = "<th>LLM \\ Jev</th>" + cats.map((c) => `<th>${c}</th>`).join("");
+        let matrixRows = "";
+        data.categories.forEach((llm, i) => {
+          matrixRows += `<tr><td><strong>${cats[i]}</strong></td>`;
+          data.categories.forEach((jev) => {
+            const n = data.confusion[llm][jev];
+            const style = n && llm === jev ? ' style="font-weight:600"' : "";
+            matrixRows += `<td class="count-cell"${style}>${n ? fmtNum(n) : ""}</td>`;
+          });
+          matrixRows += "</tr>";
+        });
+
+        tables.innerHTML = `
+          <div class="table-card">
+            <div class="table-card-header">Coincidencia por confianza de Jev</div>
+            <div class="cat-table-wrap">
+              <table class="cat-table">
+                <thead><tr><th>Confianza</th><th style="text-align:right">N</th><th style="text-align:right">Coinciden</th></tr></thead>
+                <tbody>${bucketRows}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-card">
+            <div class="table-card-header">Matriz LLM × Jev</div>
+            <div class="cat-table-wrap">
+              <table class="cat-table">
+                <thead><tr>${header}</tr></thead>
+                <tbody>${matrixRows}</tbody>
+              </table>
+            </div>
+          </div>`;
+
+        if (!data.mismatches.length) {
+          mismatches.replaceChildren();
+          return;
+        }
+        let mmRows = "";
+        data.mismatches.forEach((m) => {
+          const when = escapeHtml((m.created_at || "").substring(0, 16).replace("T", " "));
+          mmRows += `<tr>
+            <td>${when}</td>
+            <td>${escapeHtml(m.sender)}</td>
+            <td>${escapeHtml(m.subject)}</td>
+            <td>${escapeHtml(m.category)}</td>
+            <td>${escapeHtml(m.jev_category)}</td>
+            <td class="count-cell">${fmtConf(m.jev_confidence)}</td>
+          </tr>`;
+        });
+        mismatches.innerHTML = `
+          <div class="table-card-header">Últimas discrepancias (${fmtNum(data.mismatches.length)})</div>
+          <div class="cat-table-wrap">
+            <table class="cat-table">
+              <thead><tr><th>Fecha</th><th>Remitente</th><th>Asunto</th><th>LLM</th><th>Jev</th><th style="text-align:right">Conf.</th></tr></thead>
+              <tbody>${mmRows}</tbody>
+            </table>
+          </div>`;
       }
 
       function applyFilters() {
