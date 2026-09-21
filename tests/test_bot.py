@@ -250,6 +250,62 @@ class TestProcessEmail:
         # Routing ahora vive en classifier._select_client — bot pasa el dict tal cual.
         assert mock_classify.call_args.args[0] is llm_clients
 
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": "promo"},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_runs_after_successful_classification(
+        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_category": "spam",
+            "jev_confidence": 0.9,
+            "jev_probabilities": {"spam": 0.9, "otros": 0.1},
+            "jev_latency_ms": 500,
+            "jev_model": "jev-1.13.0",
+        }
+        msg = _make_email(subject="Oferta", body={"content": "<p>Compra ya</p>"})
+
+        _process_email(mock_gmail, MagicMock(), config, msg, jev=jev)
+
+        jev.classify.assert_called_once()
+        call = jev.classify.call_args.kwargs
+        assert call["subject"] == "Oferta"
+        assert call["body_text"] == "Compra ya"
+        assert call["sender_address"] == "juan@empresa.com"
+        recorded = mock_record.call_args.kwargs
+        assert recorded["jev_category"] == "spam"
+        assert recorded["jev_confidence"] == 0.9
+        assert recorded["jev_latency_ms"] == 500
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.classify_email", return_value=None)
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_skipped_when_classification_fails(
+        self, _mock_load, _mock_classify, _mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+        jev.classify.assert_not_called()
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": ""},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_none_records_no_jev_fields(
+        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
+    ):
+        _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=None)
+        recorded = mock_record.call_args.kwargs
+        assert not any(key.startswith("jev_") for key in recorded)
+
 
 # ------------------------------------------------------------------
 # process_mailbox
@@ -284,3 +340,10 @@ class TestProcessMailbox:
         results = process_mailbox(mock_gmail, None, config)
         assert len(results) == 1
         assert "error" in results[0]
+
+    @patch("gmail_inbox_bot.bot._process_email", return_value="ok")
+    def test_process_mailbox_forwards_jev(self, mock_process, mock_gmail, config):
+        mock_gmail.get_unread_emails.return_value = [_make_email()]
+        jev = MagicMock()
+        process_mailbox(mock_gmail, None, config, jev=jev)
+        assert mock_process.call_args.kwargs["jev"] is jev

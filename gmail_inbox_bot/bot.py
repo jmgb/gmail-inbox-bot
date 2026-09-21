@@ -12,6 +12,7 @@ from .actions import already_processed, execute
 from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
+from .jev_shadow import JevShadow, build_jev_shadow
 from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 from .mail_processing import (
@@ -128,6 +129,7 @@ def _process_email(
     email_msg: dict,
     *,
     dry_run: bool = False,
+    jev: JevShadow | None = None,
 ) -> str:
     """Process a single email through the full pipeline. Returns status string."""
     msg_id = email_msg["id"]
@@ -231,6 +233,29 @@ def _process_email(
         )
         return "classification failed — tagged ERROR IA"
 
+    # 4b. Clasificación sombra con Jev (no decide nada, solo se registra)
+    jev_result: dict = {}
+    if jev is not None:
+        jev_result = jev.classify(
+            subject=subject,
+            body_text=body_text,
+            sender_name=sender_name,
+            sender_address=sender,
+            has_attachments=has_attachments,
+        )
+        if "jev_category" in jev_result:
+            llm_category = classification.get("categoria", "")
+            verdict = "coinciden" if jev_result["jev_category"] == llm_category else "DIFIEREN"
+            log.info(
+                "[%s] 🕶️ Jev sombra: jev=%s (conf=%.2f) | llm=%s | %s | %dms",
+                msg_id,
+                jev_result["jev_category"],
+                jev_result["jev_confidence"],
+                llm_category,
+                verdict,
+                jev_result["jev_latency_ms"],
+            )
+
     # 5. Notify important emails
     categoria = classification.get("categoria", "")
     if categoria in NOTIFY_CATEGORIES:
@@ -280,6 +305,7 @@ def _process_email(
         output_cost_usd=cost.get("output_cost_usd"),
         total_cost_usd=cost.get("total_cost_usd"),
         llm_provider=cost.get("provider"),
+        **jev_result,
     )
 
     return result
@@ -292,6 +318,7 @@ def process_mailbox(
     *,
     dry_run: bool = False,
     query: str = "is:unread in:inbox",
+    jev: JevShadow | None = None,
 ) -> list[str]:
     """Poll one mailbox and process all unread emails. Returns list of results."""
     user_email = config["email"]
@@ -312,7 +339,9 @@ def process_mailbox(
     results: list[str] = []
     for email_msg in emails:
         try:
-            result = _process_email(gmail, openai_client, config, email_msg, dry_run=dry_run)
+            result = _process_email(
+                gmail, openai_client, config, email_msg, dry_run=dry_run, jev=jev
+            )
             results.append(result)
         except Exception:
             msg_id = email_msg.get("id", "?")
@@ -347,6 +376,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     env = load_env()
     setup_telegram_logging(chat_id=os.environ.get("TELEGRAM_CHAT_ID"))
     openai_client = _build_llm_clients(env)
+    jev = build_jev_shadow(env)
     configs = load_mailbox_configs()
 
     if not configs:
@@ -372,7 +402,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     while True:
         for gmail, config in clients:
             query = config.get("query", "is:unread in:inbox")
-            process_mailbox(gmail, openai_client, config, dry_run=dry_run, query=query)
+            process_mailbox(gmail, openai_client, config, dry_run=dry_run, query=query, jev=jev)
 
         if once:
             log.info("Single-run mode — exiting")

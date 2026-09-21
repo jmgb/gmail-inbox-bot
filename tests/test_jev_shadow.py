@@ -1,5 +1,6 @@
 """Tests for jev_shadow — clasificación sombra con Jev (TypeSafe.ai)."""
 
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -17,6 +18,7 @@ from gmail_inbox_bot.jev_shadow import (
     build_state,
     load_criteria,
 )
+from gmail_inbox_bot.metrics import record_email
 
 CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
 CONFIG_DIR = Path("config")
@@ -203,3 +205,23 @@ class TestClassify:
         assert result["jev_error"].startswith("TypeError")
         assert isinstance(result["jev_latency_ms"], int)
         client.system_one.assert_not_called()
+
+    def test_result_keys_are_record_email_kwargs(self):
+        # bot.py hace ``record_email(**jev_result)``: cualquier clave desconocida
+        # sería un TypeError en producción, en ambas ramas de ``classify``.
+        accepted = set(inspect.signature(record_email).parameters)
+        kwargs = dict(
+            subject="s",
+            body_text="b",
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+
+        ok_client = MagicMock()
+        ok_client.system_one.return_value = _fake_response()
+        assert set(self._shadow(ok_client).classify(**kwargs)) <= accepted
+
+        ko_client = MagicMock()
+        ko_client.system_one.side_effect = RuntimeError("boom")
+        assert set(self._shadow(ko_client).classify(**kwargs)) <= accepted

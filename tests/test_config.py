@@ -44,7 +44,6 @@ class TestLoadEnv:
         monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
         monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
         monkeypatch.setenv("JEV_API_KEY", "apikey_test")
-        from gmail_inbox_bot.config import load_env
 
         assert load_env()["JEV_API_KEY"] == "apikey_test"
 
@@ -53,7 +52,6 @@ class TestLoadEnv:
         monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
         monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
         monkeypatch.delenv("JEV_API_KEY", raising=False)
-        from gmail_inbox_bot.config import load_env
 
         assert load_env()["JEV_API_KEY"] == ""
 
