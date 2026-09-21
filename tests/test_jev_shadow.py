@@ -1,8 +1,19 @@
 """Tests for jev_shadow — clasificación sombra con Jev (TypeSafe.ai)."""
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
+
+from gmail_inbox_bot import jev_shadow
+from gmail_inbox_bot.jev_shadow import (
+    JEV_MAX_BODY_CHARS,
+    JevShadow,
+    build_jev_shadow,
+    build_state,
+    load_criteria,
+)
 
 CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
 CONFIG_DIR = Path("config")
@@ -23,3 +34,140 @@ class TestCriteriaFile:
         for yml in sorted(CONFIG_DIR.glob("*.yml")):
             config = yaml.safe_load(yml.read_text(encoding="utf-8"))
             assert set(criteria) == set(config["routing"]), yml.name
+
+
+def _fake_response(choice="spam", confidence=0.93, probabilities=None, model="jev-1.13.0"):
+    answer = SimpleNamespace(
+        choice=choice,
+        confidence=confidence,
+        probabilities=probabilities or {"spam": 0.93, "otros": 0.07},
+    )
+    return SimpleNamespace(model=model, choices={"categoria": answer})
+
+
+class TestLoadCriteria:
+    def test_returns_dict_keyed_by_category(self):
+        criteria = load_criteria(CRITERIA_PATH)
+        assert "spam" in criteria
+        assert set(criteria["spam"]) == {"what", "not_for", "examples"}
+
+
+class TestBuildState:
+    def test_contains_all_fields(self):
+        state = build_state(
+            subject="Hola",
+            body_text="Cuerpo del email",
+            sender_name="Juan",
+            sender_address="juan@x.com",
+            has_attachments=True,
+        )
+        assert "Título del email: Hola" in state
+        assert "¿Contiene archivo adjunto?: True" in state
+        assert "Remitente: Juan <juan@x.com>" in state
+        assert "Contenido del email:\nCuerpo del email" in state
+        assert "JSON" not in state
+
+    def test_truncates_long_body(self):
+        state = build_state(
+            subject="s",
+            body_text="x" * (JEV_MAX_BODY_CHARS + 500),
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+        assert state.count("x") == JEV_MAX_BODY_CHARS
+
+
+class TestBuildJevShadow:
+    def test_returns_none_without_key(self):
+        assert build_jev_shadow({}, CRITERIA_PATH) is None
+        assert build_jev_shadow({"JEV_API_KEY": ""}, CRITERIA_PATH) is None
+
+    def test_builds_client_with_key(self, monkeypatch):
+        captured = {}
+
+        def fake_client(**kwargs):
+            captured.update(kwargs)
+            return MagicMock(name="jev-client")
+
+        monkeypatch.setattr(jev_shadow, "TypeSafeClient", fake_client)
+        shadow = build_jev_shadow({"JEV_API_KEY": "apikey_test"}, CRITERIA_PATH)
+        assert isinstance(shadow, JevShadow)
+        assert captured["api_key"] == "apikey_test"
+        assert captured["timeout"] == jev_shadow.JEV_TIMEOUT_SECONDS
+        assert "otros" in shadow.criteria
+
+
+class TestClassify:
+    def _shadow(self, client):
+        return JevShadow(client=client, criteria={"spam": "x", "otros": "y"})
+
+    def test_maps_response_to_dict(self):
+        client = MagicMock()
+        client.system_one.return_value = _fake_response()
+        result = self._shadow(client).classify(
+            subject="Oferta",
+            body_text="Compra ya",
+            sender_name="",
+            sender_address="promo@x.com",
+            has_attachments=False,
+        )
+        assert result["jev_category"] == "spam"
+        assert result["jev_confidence"] == 0.93
+        assert result["jev_probabilities"] == {"spam": 0.93, "otros": 0.07}
+        assert result["jev_model"] == "jev-1.13.0"
+        assert isinstance(result["jev_latency_ms"], int)
+        assert "jev_error" not in result
+
+    def test_sends_state_and_choice_question(self):
+        client = MagicMock()
+        client.system_one.return_value = _fake_response()
+        self._shadow(client).classify(
+            subject="Oferta",
+            body_text="Compra ya",
+            sender_name="",
+            sender_address="promo@x.com",
+            has_attachments=False,
+        )
+        state, questions = client.system_one.call_args.args
+        assert "Título del email: Oferta" in state
+        assert list(questions) == ["categoria"]
+        assert questions["categoria"].criteria == {"spam": "x", "otros": "y"}
+
+    def test_exception_becomes_jev_error(self):
+        client = MagicMock()
+        client.system_one.side_effect = RuntimeError("boom")
+        result = self._shadow(client).classify(
+            subject="s",
+            body_text="b",
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+        assert result["jev_error"] == "RuntimeError: boom"
+        assert isinstance(result["jev_latency_ms"], int)
+        assert "jev_category" not in result
+
+    def test_missing_answer_becomes_jev_error(self):
+        client = MagicMock()
+        client.system_one.return_value = SimpleNamespace(model="jev", choices={})
+        result = self._shadow(client).classify(
+            subject="s",
+            body_text="b",
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+        assert result["jev_error"].startswith("KeyError")
+
+    def test_error_message_is_truncated(self):
+        client = MagicMock()
+        client.system_one.side_effect = RuntimeError("x" * 500)
+        result = self._shadow(client).classify(
+            subject="s",
+            body_text="b",
+            sender_name="",
+            sender_address="a@b.c",
+            has_attachments=False,
+        )
+        assert len(result["jev_error"]) == 200
