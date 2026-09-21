@@ -82,11 +82,11 @@ def classify(client, criteria, *, subject, body_text, sender_name, sender_addres
 
   ```python
   {
-      "jev_category": str,  # answer.choice
-      "jev_confidence": float,  # answer.confidence
-      "jev_probabilities": dict,  # answer.probabilities, {categoria: float}
-      "jev_latency_ms": int,
-      "jev_model": str | None,  # response.model si existe
+    "jev_category": str,            # answer.choice
+    "jev_confidence": float,        # answer.confidence
+    "jev_probabilities": dict,      # answer.probabilities, {categoria: float}
+    "jev_latency_ms": int,
+    "jev_model": str | None,        # response.model si existe
   }
   ```
 

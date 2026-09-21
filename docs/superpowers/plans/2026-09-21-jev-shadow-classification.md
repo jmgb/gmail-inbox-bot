@@ -585,24 +585,23 @@ git commit -m "feat(jev): módulo jev_shadow con cliente, criterios y classify s
 Ver primero cómo están escritos los tests de `load_env` en `tests/test_config.py` (`grep -n "load_env" tests/test_config.py`) y añadir en la misma clase/estilo. Como `load_env` llama a `load_dotenv()` (que lee el `.env` local del desarrollador, donde ya existe `JEV_API_KEY`), neutralizarlo con `monkeypatch`:
 
 ```python
-def test_load_env_exposes_jev_api_key(self, monkeypatch):
-    monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
-    monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
-    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("JEV_API_KEY", "apikey_test")
-    from gmail_inbox_bot.config import load_env
+    def test_load_env_exposes_jev_api_key(self, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.setenv("JEV_API_KEY", "apikey_test")
+        from gmail_inbox_bot.config import load_env
 
-    assert load_env()["JEV_API_KEY"] == "apikey_test"
+        assert load_env()["JEV_API_KEY"] == "apikey_test"
 
+    def test_load_env_jev_api_key_defaults_to_empty(self, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.delenv("JEV_API_KEY", raising=False)
+        from gmail_inbox_bot.config import load_env
 
-def test_load_env_jev_api_key_defaults_to_empty(self, monkeypatch):
-    monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
-    monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
-    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
-    monkeypatch.delenv("JEV_API_KEY", raising=False)
-    from gmail_inbox_bot.config import load_env
-
-    assert load_env()["JEV_API_KEY"] == ""
+        assert load_env()["JEV_API_KEY"] == ""
 ```
 
 - [ ] **Step 2: Ejecutar y ver que falla**
@@ -649,51 +648,49 @@ git commit -m "feat(jev): load_env expone JEV_API_KEY"
 Añadir a `tests/test_metrics.py`, dentro de `class TestRecordEmail`:
 
 ```python
-@patch("gmail_inbox_bot.metrics._supabase_upsert")
-def test_jev_fields_are_included_in_payload(self, mock_upsert):
-    record_email(
-        mailbox="test",
-        category="spam",
-        msg_id="msg-2",
-        jev_category="spam",
-        jev_confidence=0.93,
-        jev_probabilities={"spam": 0.93, "otros": 0.07},
-        jev_latency_ms=901,
-        jev_model="jev-1.13.0",
-    )
+    @patch("gmail_inbox_bot.metrics._supabase_upsert")
+    def test_jev_fields_are_included_in_payload(self, mock_upsert):
+        record_email(
+            mailbox="test",
+            category="spam",
+            msg_id="msg-2",
+            jev_category="spam",
+            jev_confidence=0.93,
+            jev_probabilities={"spam": 0.93, "otros": 0.07},
+            jev_latency_ms=901,
+            jev_model="jev-1.13.0",
+        )
 
-    payload = mock_upsert.call_args.args[0]
-    assert payload["jev_category"] == "spam"
-    assert payload["jev_confidence"] == 0.93
-    assert payload["jev_probabilities"] == {"spam": 0.93, "otros": 0.07}
-    assert payload["jev_latency_ms"] == 901
-    assert payload["jev_model"] == "jev-1.13.0"
-    assert "jev_error" not in payload
+        payload = mock_upsert.call_args.args[0]
+        assert payload["jev_category"] == "spam"
+        assert payload["jev_confidence"] == 0.93
+        assert payload["jev_probabilities"] == {"spam": 0.93, "otros": 0.07}
+        assert payload["jev_latency_ms"] == 901
+        assert payload["jev_model"] == "jev-1.13.0"
+        assert "jev_error" not in payload
 
+    @patch("gmail_inbox_bot.metrics._supabase_upsert")
+    def test_jev_error_is_included_and_other_jev_fields_omitted(self, mock_upsert):
+        record_email(
+            mailbox="test",
+            category="spam",
+            msg_id="msg-3",
+            jev_error="TypeSafeAPITimeoutError: timeout",
+            jev_latency_ms=8000,
+        )
 
-@patch("gmail_inbox_bot.metrics._supabase_upsert")
-def test_jev_error_is_included_and_other_jev_fields_omitted(self, mock_upsert):
-    record_email(
-        mailbox="test",
-        category="spam",
-        msg_id="msg-3",
-        jev_error="TypeSafeAPITimeoutError: timeout",
-        jev_latency_ms=8000,
-    )
+        payload = mock_upsert.call_args.args[0]
+        assert payload["jev_error"] == "TypeSafeAPITimeoutError: timeout"
+        assert payload["jev_latency_ms"] == 8000
+        assert "jev_category" not in payload
+        assert "jev_confidence" not in payload
 
-    payload = mock_upsert.call_args.args[0]
-    assert payload["jev_error"] == "TypeSafeAPITimeoutError: timeout"
-    assert payload["jev_latency_ms"] == 8000
-    assert "jev_category" not in payload
-    assert "jev_confidence" not in payload
+    @patch("gmail_inbox_bot.metrics._supabase_upsert")
+    def test_jev_fields_absent_when_not_provided(self, mock_upsert):
+        record_email(mailbox="test", category="otros", msg_id="msg-4")
 
-
-@patch("gmail_inbox_bot.metrics._supabase_upsert")
-def test_jev_fields_absent_when_not_provided(self, mock_upsert):
-    record_email(mailbox="test", category="otros", msg_id="msg-4")
-
-    payload = mock_upsert.call_args.args[0]
-    assert not any(key.startswith("jev_") for key in payload)
+        payload = mock_upsert.call_args.args[0]
+        assert not any(key.startswith("jev_") for key in payload)
 ```
 
 - [ ] **Step 2: Ejecutar y ver que falla**
@@ -709,12 +706,12 @@ Expected: FAIL con `TypeError: record_email() got an unexpected keyword argument
 En `gmail_inbox_bot/metrics.py`, en la firma de `record_email`, tras `llm_provider: str | None = None,`:
 
 ```python
-jev_category: str | None = (None,)
-jev_confidence: float | None = (None,)
-jev_probabilities: dict[str, float] | None = (None,)
-jev_latency_ms: int | None = (None,)
-jev_model: str | None = (None,)
-jev_error: str | None = (None,)
+    jev_category: str | None = None,
+    jev_confidence: float | None = None,
+    jev_probabilities: dict[str, float] | None = None,
+    jev_latency_ms: int | None = None,
+    jev_model: str | None = None,
+    jev_error: str | None = None,
 ```
 
 En el docstring, tras la línea de `llm_provider`:
@@ -824,63 +821,61 @@ git commit -m "feat(jev): migración de columnas jev_* en email_metrics"
 En `tests/test_bot.py`, añadir al final de la clase que contiene `test_successful_classification_and_execute` (buscar `class Test` sobre la línea 210). Comprobar primero cómo obtiene ese archivo `_make_email` (`grep -n "_make_email" tests/test_bot.py | head -1`) y seguir el mismo patrón.
 
 ```python
-@patch("gmail_inbox_bot.bot.record_email")
-@patch("gmail_inbox_bot.bot.execute", return_value="tagged")
-@patch(
-    "gmail_inbox_bot.bot.classify_email",
-    return_value={"categoria": "spam", "razon_clasificacion": "promo"},
-)
-@patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-def test_jev_shadow_runs_after_successful_classification(
-    self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
-):
-    jev = MagicMock()
-    jev.classify.return_value = {
-        "jev_category": "spam",
-        "jev_confidence": 0.9,
-        "jev_probabilities": {"spam": 0.9, "otros": 0.1},
-        "jev_latency_ms": 500,
-        "jev_model": "jev-1.13.0",
-    }
-    msg = _make_email(subject="Oferta", body_html="<p>Compra ya</p>")
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": "promo"},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_runs_after_successful_classification(
+        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_category": "spam",
+            "jev_confidence": 0.9,
+            "jev_probabilities": {"spam": 0.9, "otros": 0.1},
+            "jev_latency_ms": 500,
+            "jev_model": "jev-1.13.0",
+        }
+        msg = _make_email(subject="Oferta", body_html="<p>Compra ya</p>")
 
-    _process_email(mock_gmail, MagicMock(), config, msg, jev=jev)
+        _process_email(mock_gmail, MagicMock(), config, msg, jev=jev)
 
-    jev.classify.assert_called_once()
-    call = jev.classify.call_args.kwargs
-    assert call["subject"] == "Oferta"
-    assert call["body_text"] == "Compra ya"
-    assert call["sender_address"] == "juan@empresa.com"
-    recorded = mock_record.call_args.kwargs
-    assert recorded["jev_category"] == "spam"
-    assert recorded["jev_confidence"] == 0.9
-    assert recorded["jev_latency_ms"] == 500
+        jev.classify.assert_called_once()
+        call = jev.classify.call_args.kwargs
+        assert call["subject"] == "Oferta"
+        assert call["body_text"] == "Compra ya"
+        assert call["sender_address"] == "juan@empresa.com"
+        recorded = mock_record.call_args.kwargs
+        assert recorded["jev_category"] == "spam"
+        assert recorded["jev_confidence"] == 0.9
+        assert recorded["jev_latency_ms"] == 500
 
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.classify_email", return_value=None)
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_skipped_when_classification_fails(
+        self, _mock_load, _mock_classify, _mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+        jev.classify.assert_not_called()
 
-@patch("gmail_inbox_bot.bot.record_email")
-@patch("gmail_inbox_bot.bot.classify_email", return_value=None)
-@patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-def test_jev_shadow_skipped_when_classification_fails(
-    self, _mock_load, _mock_classify, _mock_record, mock_gmail, config
-):
-    jev = MagicMock()
-    _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
-    jev.classify.assert_not_called()
-
-
-@patch("gmail_inbox_bot.bot.record_email")
-@patch("gmail_inbox_bot.bot.execute", return_value="tagged")
-@patch(
-    "gmail_inbox_bot.bot.classify_email",
-    return_value={"categoria": "spam", "razon_clasificacion": ""},
-)
-@patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-def test_jev_shadow_none_records_no_jev_fields(
-    self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
-):
-    _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=None)
-    recorded = mock_record.call_args.kwargs
-    assert not any(key.startswith("jev_") for key in recorded)
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": ""},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_jev_shadow_none_records_no_jev_fields(
+        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
+    ):
+        _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=None)
+        recorded = mock_record.call_args.kwargs
+        assert not any(key.startswith("jev_") for key in recorded)
 ```
 
 Y en la sección `process_mailbox` del mismo archivo:
@@ -974,7 +969,9 @@ def process_mailbox(
 y dentro del bucle:
 
 ```python
-result = _process_email(gmail, openai_client, config, email_msg, dry_run=dry_run, jev=jev)
+            result = _process_email(
+                gmail, openai_client, config, email_msg, dry_run=dry_run, jev=jev
+            )
 ```
 
 En `run()`, tras `openai_client = _build_llm_clients(env)`:
