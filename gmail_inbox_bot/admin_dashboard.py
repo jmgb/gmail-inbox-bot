@@ -28,6 +28,25 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 _PAGE_SIZE = 1000
 
+JEV_CATEGORIES = (
+    "personal",
+    "finanzas",
+    "compras",
+    "newsletters",
+    "notificaciones",
+    "automatico",
+    "spam",
+    "otros",
+)
+_JEV_SELECT = "mailbox,category,jev_category,jev_confidence,jev_error,sender,subject,created_at"
+_CONFIDENCE_BUCKETS = (
+    ("<0.5", 0.0, 0.5),
+    ("0.5-0.7", 0.5, 0.7),
+    ("0.7-0.9", 0.7, 0.9),
+    (">=0.9", 0.9, 1.01),
+)
+_MAX_MISMATCHES = 30
+
 
 def _is_authenticated(request: Request) -> bool:
     """Check if the request has a valid session cookie."""
@@ -42,6 +61,9 @@ async def _fetch_metrics(
     date_from: str | None,
     date_to: str | None,
     mailbox: str | None,
+    *,
+    select: str = "mailbox,category,created_at",
+    extra_params: dict[str, str] | None = None,
 ) -> list[dict]:
     """Fetch all matching rows from Supabase, paginating as needed."""
     url = os.environ.get("SUPABASE_URL", "")
@@ -60,8 +82,9 @@ async def _fetch_metrics(
     }
 
     params: dict[str, str] = {
-        "select": "mailbox,category,created_at",
+        "select": select,
         "order": "created_at.asc",
+        **(extra_params or {}),
     }
     if date_from:
         params["created_at"] = f"gte.{date_from}"
@@ -129,6 +152,67 @@ def _aggregate(rows: list[dict]) -> dict:
     }
 
 
+def _pct(part: int, whole: int) -> float:
+    return round(100.0 * part / whole, 1) if whole else 0.0
+
+
+def _aggregate_jev(rows: list[dict]) -> dict:
+    """Compara la categoría del LLM (``category``) con la sombra de Jev (``jev_category``).
+
+    Las filas con ``jev_error`` cuentan como errores y no entran en la coincidencia.
+    """
+    compared = [r for r in rows if r.get("jev_category")]
+    errors = sum(1 for r in rows if r.get("jev_error"))
+
+    agreed = sum(1 for r in compared if r.get("category") == r.get("jev_category"))
+
+    by_confidence = []
+    for label, low, high in _CONFIDENCE_BUCKETS:
+        bucket = [
+            r
+            for r in compared
+            if r.get("jev_confidence") is not None and low <= float(r["jev_confidence"]) < high
+        ]
+        bucket_agreed = sum(1 for r in bucket if r.get("category") == r.get("jev_category"))
+        by_confidence.append(
+            {"label": label, "n": len(bucket), "agreement_pct": _pct(bucket_agreed, len(bucket))}
+        )
+
+    confusion = {llm: dict.fromkeys(JEV_CATEGORIES, 0) for llm in JEV_CATEGORIES}
+    for r in compared:
+        llm, jev = r.get("category"), r.get("jev_category")
+        if llm in confusion and jev in confusion[llm]:
+            confusion[llm][jev] += 1
+
+    mismatches = sorted(
+        (r for r in compared if r.get("category") != r.get("jev_category")),
+        key=lambda r: r.get("created_at", ""),
+        reverse=True,
+    )[:_MAX_MISMATCHES]
+    mismatches = [
+        {
+            "created_at": r.get("created_at", ""),
+            "mailbox": r.get("mailbox", ""),
+            "sender": r.get("sender", ""),
+            "subject": r.get("subject", ""),
+            "category": r.get("category", ""),
+            "jev_category": r.get("jev_category", ""),
+            "jev_confidence": r.get("jev_confidence"),
+        }
+        for r in mismatches
+    ]
+
+    return {
+        "total": len(compared),
+        "agreement_pct": _pct(agreed, len(compared)),
+        "errors": errors,
+        "by_confidence": by_confidence,
+        "confusion": confusion,
+        "categories": list(JEV_CATEGORIES),
+        "mismatches": mismatches,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -166,4 +250,32 @@ async def api_metrics(
         "date_to": date_to,
         "mailbox": mailbox,
     }
+    return result
+
+
+@router.get("/api/jev_shadow")
+async def api_jev_shadow(
+    request: Request,
+    date_from: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
+    mailbox: str | None = Query(None, description="Filter by mailbox name"),
+) -> dict:
+    """Comparativa Jev (sombra) vs clasificador LLM."""
+    if not _is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        rows = await _fetch_metrics(
+            date_from,
+            date_to,
+            mailbox,
+            select=_JEV_SELECT,
+            extra_params={"or": "(jev_category.not.is.null,jev_error.not.is.null)"},
+        )
+    except Exception as exc:
+        logger.error("Error fetching Jev shadow metrics from Supabase: %s", exc)
+        raise HTTPException(status_code=502, detail="Error fetching metrics") from exc
+
+    result = _aggregate_jev(rows)
+    result["filters"] = {"date_from": date_from, "date_to": date_to, "mailbox": mailbox}
     return result
