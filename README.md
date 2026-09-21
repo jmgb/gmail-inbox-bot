@@ -161,7 +161,8 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
 - **Sombra con Jev (TypeSafe.ai)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
-  también cada email con Jev (`typesafe-sdk`, primitiva `Choice`) y guarda categoría, confianza y
+  también cada email tras una clasificación LLM completada (no los resueltos por prefiltros), con
+  Jev (`typesafe-sdk`, primitiva `Choice`), y guarda categoría, confianza y
   probabilidades en `email_metrics` (`jev_*`) sin influir en el routing. Comparativa en
   `/admin/dashboard`, sección "Jev vs LLM". Criterios en `gmail_inbox_bot/prompts/clasificador_jev.yml`.
 - **Salida inválida**: JSON ilegible también activa el fallback y queda contabilizado como intento.

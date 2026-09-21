@@ -155,9 +155,10 @@ está en el `.env`, cada email clasificado por el LLM se clasifica también con 
 se guarda en la misma fila de `email_metrics`. Jev **no decide nada** en esta fase; la comparativa
 está en `/admin/dashboard` (sección "Jev vs LLM"). Los criterios de Jev viven en
 `gmail_inbox_bot/prompts/clasificador_jev.yml` (una entrada por categoría con `what` / `not_for` /
-`examples`, mismas claves que `routing`; un test comprueba la paridad). Ambos clasificadores reciben
-el mismo texto (`email_format.format_email_for_classifier`). **Mientras dure la sombra, cada regla
-nueva del prompt LLM se replica en el YAML de Jev.** Si el YAML falta o es inválido el bot falla al
+`examples`, mismas claves que `routing`; un test comprueba la paridad). Ambos clasificadores usan
+el mismo formato (`email_format.format_email_for_classifier`), pero Jev limita el cuerpo a 6000
+caracteres. **Mientras dure la sombra, cada regla nueva del prompt LLM se replica en el YAML de
+Jev.** Si el YAML falta o es inválido el bot falla al
 arrancar (error de despliegue, a propósito). Diseño:
 `docs/superpowers/specs/2026-09-21-jev-shadow-classification-design.md`.
 
