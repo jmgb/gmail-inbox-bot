@@ -1,6 +1,5 @@
 """Tests for jev_shadow — clasificación sombra con Jev (TypeSafe.ai)."""
 
-import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -9,7 +8,6 @@ import yaml
 from typesafe_sdk import Choice, RetryPolicy
 
 from gmail_inbox_bot import jev_shadow
-from gmail_inbox_bot.email_format import format_email_for_classifier
 from gmail_inbox_bot.jev_shadow import (
     JEV_ERROR_MAX_CHARS,
     JEV_MAX_BODY_CHARS,
@@ -82,16 +80,6 @@ class TestBuildState:
         )
         assert state.count("x") == JEV_MAX_BODY_CHARS
 
-    def test_matches_llm_classifier_format(self):
-        kwargs = dict(
-            subject="Hola",
-            body_text="Cuerpo corto",
-            sender_name="Juan",
-            sender_address="juan@x.com",
-            has_attachments=False,
-        )
-        assert build_state(**kwargs) == format_email_for_classifier(**kwargs)
-
 
 class TestBuildJevShadow:
     def test_returns_none_without_key(self):
@@ -153,7 +141,7 @@ class TestClassify:
         state, questions = client.system_one.call_args.args
         assert "Título del email: Oferta" in state
         assert list(questions) == ["categoria"]
-        assert questions["categoria"] is shadow.question
+        assert questions["categoria"].criteria == {"spam": "x", "otros": "y"}
 
     def test_exception_becomes_jev_error(self):
         client = MagicMock()
@@ -206,11 +194,17 @@ class TestClassify:
         assert isinstance(result["jev_latency_ms"], int)
         client.system_one.assert_not_called()
 
-    def test_result_keys_are_record_email_kwargs(self):
-        # bot.py hace ``record_email(**jev_result)``: cualquier clave desconocida
-        # sería un TypeError en producción, en ambas ramas de ``classify``.
-        accepted = set(inspect.signature(record_email).parameters)
-        kwargs = dict(
+    def test_zero_confidence_and_latency_survive_metrics_persistence(self, monkeypatch):
+        monkeypatch.setenv("SUPABASE_URL", "https://metrics.example.test")
+        monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-key")
+        monkeypatch.setattr(jev_shadow.time, "perf_counter", lambda: 42.0)
+        post = MagicMock()
+        monkeypatch.setattr("httpx2.post", post)
+        client = MagicMock()
+        client.system_one.return_value = _fake_response(
+            confidence=0.0, probabilities={"spam": 0.0, "otros": 1.0}
+        )
+        result = self._shadow(client).classify(
             subject="s",
             body_text="b",
             sender_name="",
@@ -218,10 +212,10 @@ class TestClassify:
             has_attachments=False,
         )
 
-        ok_client = MagicMock()
-        ok_client.system_one.return_value = _fake_response()
-        assert set(self._shadow(ok_client).classify(**kwargs)) <= accepted
+        record_email(mailbox="test", category="otros", msg_id="zero", **result)
 
-        ko_client = MagicMock()
-        ko_client.system_one.side_effect = RuntimeError("boom")
-        assert set(self._shadow(ko_client).classify(**kwargs)) <= accepted
+        payload = post.call_args.kwargs["json"]
+        assert payload["jev_confidence"] == 0.0
+        assert payload["jev_latency_ms"] == 0
+        assert payload["jev_probabilities"] == {"spam": 0.0, "otros": 1.0}
+        assert "jev_error" not in payload

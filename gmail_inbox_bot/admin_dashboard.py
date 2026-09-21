@@ -162,7 +162,7 @@ def _aggregate_jev(rows: list[dict]) -> dict:
 
     Las filas con ``jev_error`` cuentan como errores y no entran en la coincidencia.
     """
-    compared = [r for r in rows if r.get("jev_category")]
+    compared = [r for r in rows if r.get("jev_category") and not r.get("jev_error")]
     errors = sum(1 for r in rows if r.get("jev_error"))
 
     agreed = sum(1 for r in compared if r.get("category") == r.get("jev_category"))

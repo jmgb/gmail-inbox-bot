@@ -88,11 +88,15 @@ class TestAggregateJev:
         rows = [
             _row("spam", "spam", 0.9),
             _row("spam", None, None, error="TypeSafeAPITimeoutError: timeout"),
+            _row("spam", "otros", 0.6, error="TypeSafeAPITimeoutError: retry timeout"),
         ]
         result = _aggregate_jev(rows)
         assert result["total"] == 1
-        assert result["errors"] == 1
+        assert result["errors"] == 2
         assert result["agreement_pct"] == 100.0
+        assert result["confusion"]["spam"]["otros"] == 0
+        assert result["mismatches"] == []
+        assert sum(bucket["n"] for bucket in result["by_confidence"]) == 1
 
     def test_unknown_category_is_ignored_in_confusion_but_counted(self):
         rows = [_row("pre_filter:x", "spam", 0.9)]

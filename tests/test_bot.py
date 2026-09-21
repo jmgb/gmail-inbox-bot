@@ -369,9 +369,26 @@ class TestProcessMailbox:
         assert len(results) == 1
         assert "error" in results[0]
 
-    @patch("gmail_inbox_bot.bot._process_email", return_value="ok")
-    def test_process_mailbox_forwards_jev(self, mock_process, mock_gmail, config):
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "spam", "razon_clasificacion": "promo"},
+    )
+    def test_shadow_disagreement_preserves_real_mailbox_action(
+        self, _mock_classify, mock_record, mock_gmail, config
+    ):
         mock_gmail.get_unread_emails.return_value = [_make_email()]
+        config["routing"]["personal"] = {"action": "tag", "tag": "REVISAR IA"}
         jev = MagicMock()
-        process_mailbox(mock_gmail, None, config, jev=jev)
-        assert mock_process.call_args.kwargs["jev"] is jev
+        jev.classify.return_value = {
+            "jev_category": "personal",
+            "jev_confidence": 0.9,
+            "jev_latency_ms": 12,
+        }
+
+        process_mailbox(mock_gmail, MagicMock(), config, jev=jev)
+
+        mock_gmail.update_email.assert_called_once_with(config["email"], "msg_001", is_read=True)
+        recorded = mock_record.call_args.kwargs
+        assert recorded["category"] == "spam"
+        assert recorded["jev_category"] == "personal"
