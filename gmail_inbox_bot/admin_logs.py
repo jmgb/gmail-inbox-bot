@@ -290,9 +290,9 @@ async def logs_viewer_ui(request: Request) -> HTMLResponse:
     cookie = request.cookies.get(SESSION_COOKIE, "")
     if cookie and _validate_session_cookie(cookie, password):
         resp = templates.TemplateResponse(
+            request,
             "admin_logs.html",
             {
-                "request": request,
                 "log_labels": LOG_LABELS,
                 "docker_keys": list(DOCKER_CONTAINERS.keys()),
                 "file_keys": list(FILE_LOGS.keys()),

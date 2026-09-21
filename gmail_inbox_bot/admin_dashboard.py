@@ -225,7 +225,7 @@ async def dashboard_page(request: Request) -> HTMLResponse | RedirectResponse:
     if not _is_authenticated(request):
         return RedirectResponse(url="/admin/logs", status_code=302)
 
-    return templates.TemplateResponse("admin_dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "admin_dashboard.html")
 
 
 @router.get("/api/metrics")
