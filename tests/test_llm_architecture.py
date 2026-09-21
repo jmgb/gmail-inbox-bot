@@ -70,4 +70,4 @@ def test_neutral_llm_gateway_pin_is_current():
         if dependency.startswith("neutral-llm-gateway")
     ]
 
-    assert gateway_dependencies == ["neutral-llm-gateway[groq,openai]==0.16.0"]
+    assert gateway_dependencies == ["neutral-llm-gateway[groq,openai]==0.17.0"]
