@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx2
@@ -89,12 +90,13 @@ async def _fetch_metrics(
     if date_from:
         params["created_at"] = f"gte.{date_from}"
     if date_to:
+        end_exclusive = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
         key_name = "created_at" if "created_at" not in params else "and"
         if key_name == "and":
             params.pop("created_at")
-            params["and"] = f"(created_at.gte.{date_from},created_at.lte.{date_to}T23:59:59)"
+            params["and"] = f"(created_at.gte.{date_from},created_at.lt.{end_exclusive})"
         else:
-            params["created_at"] = f"lte.{date_to}T23:59:59"
+            params["created_at"] = f"lt.{end_exclusive}"
     if mailbox:
         params["mailbox"] = f"eq.{mailbox}"
 
