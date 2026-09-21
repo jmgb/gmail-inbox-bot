@@ -35,6 +35,7 @@ def load_env() -> dict[str, str]:
 
     env["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
     env["GROQ_API_KEY"] = os.environ.get("GROQ_API_KEY", "")
+    env["JEV_API_KEY"] = os.environ.get("JEV_API_KEY", "")
     env["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "INFO")
     env["ENVIRONMENT"] = os.environ.get("ENVIRONMENT", "development")
     return env

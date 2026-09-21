@@ -39,6 +39,24 @@ class TestLoadEnv:
             assert env["LOG_LEVEL"] == "INFO"
             assert env["ENVIRONMENT"] == "development"
 
+    def test_load_env_exposes_jev_api_key(self, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.setenv("JEV_API_KEY", "apikey_test")
+        from gmail_inbox_bot.config import load_env
+
+        assert load_env()["JEV_API_KEY"] == "apikey_test"
+
+    def test_load_env_jev_api_key_defaults_to_empty(self, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.config.load_dotenv", lambda: None)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.delenv("JEV_API_KEY", raising=False)
+        from gmail_inbox_bot.config import load_env
+
+        assert load_env()["JEV_API_KEY"] == ""
+
 
 class TestLoadMailboxConfigs:
     def test_missing_dir_returns_empty(self, tmp_path):
