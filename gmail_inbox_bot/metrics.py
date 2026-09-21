@@ -59,6 +59,12 @@ def record_email(
     output_cost_usd: float | None = None,
     total_cost_usd: float | None = None,
     llm_provider: str | None = None,
+    jev_category: str | None = None,
+    jev_confidence: float | None = None,
+    jev_probabilities: dict[str, float] | None = None,
+    jev_latency_ms: int | None = None,
+    jev_model: str | None = None,
+    jev_error: str | None = None,
 ) -> None:
     """Registra un email procesado en email_metrics.
 
@@ -81,6 +87,12 @@ def record_email(
         output_cost_usd       Coste USD de tokens de salida
         total_cost_usd        Coste USD total del procesamiento LLM
         llm_provider          Proveedor del modelo
+        jev_category          Categoría elegida por Jev (clasificación sombra)
+        jev_confidence        Confianza 0-1 de Jev
+        jev_probabilities     Distribución de probabilidad por categoría (JSONB)
+        jev_latency_ms        Latencia de la llamada a Jev
+        jev_model             Modelo Jev que respondió
+        jev_error             Error de la llamada a Jev, si falló
     """
     try:
         payload = {
@@ -117,6 +129,18 @@ def record_email(
             payload["total_cost_usd"] = total_cost_usd
         if llm_provider:
             payload["llm_provider"] = llm_provider
+        if jev_category:
+            payload["jev_category"] = jev_category
+        if jev_confidence is not None:
+            payload["jev_confidence"] = jev_confidence
+        if jev_probabilities is not None:
+            payload["jev_probabilities"] = jev_probabilities
+        if jev_latency_ms is not None:
+            payload["jev_latency_ms"] = jev_latency_ms
+        if jev_model:
+            payload["jev_model"] = jev_model
+        if jev_error:
+            payload["jev_error"] = jev_error
 
         _supabase_upsert(payload)
         log.debug(
