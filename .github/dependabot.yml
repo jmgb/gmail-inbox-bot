@@ -18,6 +18,10 @@ updates:
     - version-update:semver-minor
     - version-update:semver-patch
   groups:
+    security:
+      applies-to: security-updates
+      patterns:
+        - '*'
     minor-patch:
       patterns:
       - '*'
@@ -41,6 +45,10 @@ updates:
     - version-update:semver-minor
     - version-update:semver-patch
   groups:
+    security:
+      applies-to: security-updates
+      patterns:
+        - '*'
     minor-patch:
       patterns:
       - '*'
