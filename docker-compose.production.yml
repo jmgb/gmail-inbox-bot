@@ -10,7 +10,9 @@ services:
       TELEGRAM_ACTIVITY_LOG: /var/log/telegram-activity/gmail-inbox-bot.jsonl
       TELEGRAM_ACTIVITY_HOST: finanzas
     ports:
-      - "8007:8000"
+      # Solo localhost: nginx (email.pymechat.com) es la única entrada. Docker publica
+      # en 0.0.0.0 saltándose ufw, así que sin 127.0.0.1 el puerto quedaba público.
+      - "127.0.0.1:8007:8000"
     volumes:
       - ./logs:/app/logs
       - ./config:/app/config
