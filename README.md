@@ -149,14 +149,14 @@ borrador, nunca en emails enviados).
 
 ## Clasificador (LLM)
 
-`classifier.py` usa `neutral-llm-gateway==0.17.0` con salida `json_object`. El bot conserva su API
+`classifier.py` usa `neutral-llm-gateway==0.18.0` con salida `json_object`. El bot conserva su API
 síncrona mediante `llm_gateway_client.py`; por debajo, el gateway usa los adapters async oficiales
 de Groq y OpenAI. Las credenciales las lee la aplicación y las entrega explícitamente a las
 factorías del paquete; el gateway no lee el entorno. El prompt vive en
 `gmail_inbox_bot/prompts/clasificador_inbox.txt` (referenciado por `classifier.prompt_file`).
 
 - **Modelo por defecto**: `openai/gpt-oss-120b` vía **Groq** (`GROQ_API_KEY`).
-- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-5.6-luna` vía
+- **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-6-luna` vía
   **OpenAI** (`OPENAI_API_KEY`).
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
@@ -295,7 +295,7 @@ poll_interval_seconds: 600
 
 classifier:
   prompt_file: gmail_inbox_bot/prompts/clasificador_inbox.txt
-  # model: gpt-5.6-luna                   # override opcional
+  # model: gpt-6-luna                   # override opcional
 
 calendar_reminders:                                 # opt-in (ver sección)
   enabled: true

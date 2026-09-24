@@ -14,7 +14,7 @@ LLM se toma en una fase 2, con datos.
 ## Contexto
 
 - Clasificador actual: `gmail_inbox_bot/classifier.py:classify_email` → `neutral-llm-gateway`
-  (`openai/gpt-oss-120b` en Groq, fallback `gpt-5.6-luna`), prompt
+  (`openai/gpt-oss-120b` en Groq, fallback `gpt-6-luna`), prompt
   `gmail_inbox_bot/prompts/clasificador_inbox.txt`, respuesta JSON
   `{"categoria", "razon_clasificacion"}`.
 - Categorías (fuente: `routing` del YAML de cada mailbox): `personal`, `finanzas`, `compras`,
