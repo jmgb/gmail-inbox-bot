@@ -25,8 +25,13 @@ log = setup_logger("gmail_inbox_bot.jev_shadow", "logs/app.log")
 
 DEFAULT_CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
 JEV_MAX_BODY_CHARS = 6000
-JEV_TIMEOUT_SECONDS = 8.0
-JEV_MAX_RETRIES = 1
+# La sombra va en serie dentro de _process_email y no decide nada, así que su techo de
+# latencia es el techo que le impone al poll. Medido en 201 clasificaciones: p50 340 ms,
+# p90 517 ms, p99 5,5 s, máximo 16,6 s — ese máximo era 8 s de timeout por dos intentos.
+# Con 4 s y sin reintento el peor caso es 4 s. Lo que se paga es alguna fila más con
+# jev_error, que el dashboard ya excluye de la coincidencia (1 de 202 hasta ahora).
+JEV_TIMEOUT_SECONDS = 4.0
+JEV_MAX_RETRIES = 0
 JEV_ERROR_MAX_CHARS = 200
 JEV_INSTRUCTIONS = (
     "¿En qué categoría encaja este email recibido en la bandeja de entrada personal del usuario?"

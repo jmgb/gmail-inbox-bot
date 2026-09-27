@@ -109,13 +109,15 @@ class TestBuildJevShadow:
             has_attachments=False,
         )
 
-        assert len(attempts) == 2
+        # Un solo intento y 4 s: la sombra está en el camino crítico del poll y no decide
+        # nada, así que no puede bloquear el procesamiento del email más que eso.
+        assert len(attempts) == 1
         for request in attempts:
             assert request.extensions["timeout"] == {
-                "connect": 8.0,
-                "read": 8.0,
-                "write": 8.0,
-                "pool": 8.0,
+                "connect": 4.0,
+                "read": 4.0,
+                "write": 4.0,
+                "pool": 4.0,
             }
             payload = json.loads(request.content)
             assert payload["state"].split("Contenido del email:\n", 1)[1] == "z" * 6000

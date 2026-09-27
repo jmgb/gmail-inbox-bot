@@ -67,8 +67,8 @@ def classify(client, criteria, *, subject, body_text, sender_name, sender_addres
              has_attachments) -> dict
 ```
 
-- `build_jev_client`: `TypeSafeClient(api_key=env["JEV_API_KEY"], timeout=8.0,
-  retry=RetryPolicy(max_retries=1))`. Devuelve `None` si la clave está vacía o ausente. Se
+- `build_jev_client`: `TypeSafeClient(api_key=env["JEV_API_KEY"], timeout=4.0,
+  retry=RetryPolicy(max_retries=0))`. Devuelve `None` si la clave está vacía o ausente. Se
   construye una sola vez en `bot._build_llm_clients` (o función hermana) y se pasa a
   `process_email` junto al gateway.
 - `load_criteria`: lee el YAML y devuelve `{categoria: {"what": str, "not_for": str,
@@ -185,8 +185,12 @@ sin librerías de gráficos). Se carga por `fetch` como el resto de métricas.
 
 ### 6. Errores y límites
 
-- Timeout 8 s + 1 reintento → peor caso ~16 s extra por email. Con polling cada 600 s y
-  ≤50 emails por poll es asumible en sombra.
+- Timeout 4 s sin reintento → peor caso 4 s extra por email (revisado el 2026-09-27; el
+  diseño original eran 8 s + 1 reintento, ~16 s de peor caso). La sombra va en serie dentro
+  de `_process_email`, así que su techo es el techo que le impone al poll. Medido sobre 201
+  clasificaciones: p50 340 ms, p90 517 ms, p99 5,5 s, máximo 16,6 s — el máximo era
+  exactamente el peor caso del diseño original. Se paga con alguna fila más de `jev_error`,
+  que el dashboard ya excluye de la coincidencia (1 de 202 hasta la fecha).
 - Fallos de Jev nunca afectan al routing, a las notificaciones Telegram ni al `ERROR IA`.
 - Sin alertas Telegram por fallos de Jev; se ven en `jev_error` y en el dashboard.
 - Coste: una llamada Jev por email clasificado. No se estima coste USD en esta fase (no se
