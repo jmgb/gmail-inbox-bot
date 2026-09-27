@@ -46,7 +46,7 @@ Cloudflare Email Routing ─► Gmail inbox
                        1. lee no leídos (is:unread in:inbox, menos PROCESSED_TAGS)
                        2. idempotencia (PROCESSED_TAGS, red de seguridad)
                        3. pre-filtros (por remitente/asunto)
-                       4. clasifica con LLM (OpenAI/Groq)
+                       4. clasifica con Jev (fallback: LLM Groq/OpenAI si Jev falla)
                        5. ejecuta acción (tag/move/reply/forward/…)
                        6. registra métrica (Supabase)
 
@@ -77,7 +77,8 @@ Por cada email no leído del inbox (`gmail_inbox_bot/bot.py::_process_email`):
 3. **Detección de reenvíos** — si el remitente coincide con `forwarded_from`, se intenta extraer el
    remitente original del cuerpo para responder a la persona correcta (o forzar borrador con aviso si
    no se puede extraer).
-4. **Clasificación LLM** — devuelve `categoria` y `razon_clasificacion`. Si falla → tag
+4. **Clasificación** — la hace **Jev**; si Jev devuelve error, la cadena LLM. Devuelve
+   `categoria` y `razon_clasificacion`. Si fallan las dos → tag
    `ERROR IA` (queda sin leer en el inbox).
 5. **Notificación** — si la categoría está en `NOTIFY_CATEGORIES`, avisa por Telegram (actualmente
    desactivado, ver más abajo).
@@ -173,11 +174,15 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   (`🔁 Fallback usado ... motivo=AuthenticationError`), coste 0,000132 USD.
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
-- **Sombra con Jev (TypeSafe.ai)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
-  también cada email tras una clasificación LLM completada (no los resueltos por prefiltros), con
-  Jev (`typesafe-sdk`, primitiva `Choice`), y guarda categoría, confianza y
-  probabilidades en `email_metrics` (`jev_*`) sin influir en el routing. Comparativa en
-  `/admin/dashboard`, sección "Jev vs LLM". Criterios en `gmail_inbox_bot/prompts/clasificador_jev.yml`.
+- **Jev decide (desde el 2026-09-27)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
+  con Jev (`typesafe-sdk`, primitiva `Choice`) y **su categoría es la que manda en el routing**. Los
+  dos puntos anteriores (Groq y su fallback a OpenAI) pasan a ser el **fallback de segundo nivel**:
+  solo se llama al LLM si Jev devuelve error. Sin `JEV_API_KEY` clasifica el LLM, como antes del
+  corte — es el camino de vuelta, sin tocar código.
+  La confianza se guarda pero **no filtra**: 0.40 decide igual que 0.99 (umbral por categoría
+  pendiente, ver `TASKS.md`). Criterios en `gmail_inbox_bot/prompts/clasificador_jev.yml`; la
+  comparativa histórica sigue en `/admin/dashboard` → "Jev vs LLM", donde ya no crece porque las
+  filas que decide Jev no tienen contra qué compararse.
 - **Salida inválida**: JSON ilegible también activa el fallback y queda contabilizado como intento.
 - **Razonamiento**: Luna usa `max` cuando es el modelo primario efectivo. Si la llamada empieza en
   Groq, no se fuerza esfuerzo para no encarecer el camino normal; el paquete no permite aplicar `max`
@@ -341,7 +346,7 @@ templates: { categoria: { esp: "...", pt: "..." } } # respuestas fijas
 | `GOOGLE_REFRESH_TOKEN_<CUENTA>` | Refresh token por cuenta (referenciado en el YAML) |
 | `OPENAI_API_KEY` | LLM (clasificación, dynamic_reply, fallback) |
 | `GROQ_API_KEY` | LLM por defecto (`gpt-oss-120b`) |
-| `JEV_API_KEY` | Opcional. Activa la clasificación sombra con Jev (TypeSafe.ai); ver `CLAUDE.md` |
+| `JEV_API_KEY` | **Si está definida, Jev clasifica y decide** (TypeSafe.ai); vaciarla devuelve la decisión al LLM. Ver `CLAUDE.md` |
 | `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Notificaciones (opcional) |
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Métricas (opcional) |
 | `LOGS_VIEWER_PASSWORD` | Password del visor de logs |

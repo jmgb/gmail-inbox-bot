@@ -1,7 +1,12 @@
 # Clasificación sombra con Jev (TypeSafe.ai) — diseño
 
 Fecha: 2026-09-21
-Estado: aprobado por el usuario, pendiente de plan de implementación
+Estado: **superado el 2026-09-27** — la fase 1 (sombra) se implementó y funcionó del 21 al 27 de
+septiembre. Ese día el usuario decidió cortar a Jev como clasificador principal, con la cadena LLM
+como fallback solo ante error de Jev. Este documento se conserva como el diseño de la fase 1; la
+fase 2 aterrizó **a medias respecto a lo previsto aquí**: Jev decide, pero **sin umbral de
+confianza** (se registra y no filtra) y **sin cumplir el criterio de salida** de ≥300 comparados
+(se cortó con 201). Estado vivo y trabajo pendiente: `TASKS.md`.
 
 ## Objetivo
 

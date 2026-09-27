@@ -12,7 +12,7 @@ from .actions import already_processed, execute
 from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
-from .jev_shadow import JevShadow, build_jev_shadow
+from .jev_shadow import JevShadow, build_jev_shadow, classification_from_jev
 from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 from .mail_processing import (
@@ -208,16 +208,47 @@ def _process_email(
         return "error — no prompt_file configured, tagged ERROR IA"
 
     system_prompt = load_prompt(prompt_file)
-    classification = classify_email(
-        openai_client,
-        system_prompt,
-        subject,
-        body_text,
-        sender_name,
-        sender,
-        has_attachments,
-        model=model,
-    )
+
+    # Jev decide; la cadena LLM (gpt-oss-120b -> gpt-6-luna) es el fallback ante un error
+    # de Jev. Sin JEV_API_KEY, build_jev_shadow() devuelve None y decide el LLM como antes:
+    # vaciar esa variable es el camino de vuelta, sin tocar código.
+    jev_result: dict = {}
+    classification: dict | None = None
+    if jev is not None:
+        jev_result = jev.classify(
+            subject=subject,
+            body_text=body_text,
+            sender_name=sender_name,
+            sender_address=sender,
+            has_attachments=has_attachments,
+        )
+        if "jev_category" in jev_result:
+            classification = classification_from_jev(jev_result)
+            log.info(
+                "[%s] 🧠 Jev: categoria=%s (conf=%.2f) | %dms",
+                msg_id,
+                jev_result["jev_category"],
+                jev_result["jev_confidence"],
+                jev_result["jev_latency_ms"],
+            )
+        else:
+            log.warning(
+                "[%s] Jev falló (%s) — clasifica el LLM",
+                msg_id,
+                jev_result.get("jev_error"),
+            )
+
+    if classification is None:
+        classification = classify_email(
+            openai_client,
+            system_prompt,
+            subject,
+            body_text,
+            sender_name,
+            sender,
+            has_attachments,
+            model=model,
+        )
 
     if not classification:
         log.error("[%s] Classification failed — De: %s | Asunto: %s", msg_id, sender, subject)
@@ -231,32 +262,11 @@ def _process_email(
             error=True,
             sender=sender,
             subject=subject,
+            **jev_result,
         )
         return "classification failed — tagged ERROR IA"
 
     categoria = classification.get("categoria", "")
-
-    # 4b. Clasificación sombra con Jev (no decide nada, solo se registra)
-    jev_result: dict = {}
-    if jev is not None:
-        jev_result = jev.classify(
-            subject=subject,
-            body_text=body_text,
-            sender_name=sender_name,
-            sender_address=sender,
-            has_attachments=has_attachments,
-        )
-        if "jev_category" in jev_result:
-            verdict = "coinciden" if jev_result["jev_category"] == categoria else "DIFIEREN"
-            log.info(
-                "[%s] 🕶️ Jev sombra: jev=%s (conf=%.2f) | llm=%s | %s | %dms",
-                msg_id,
-                jev_result["jev_category"],
-                jev_result["jev_confidence"],
-                categoria,
-                verdict,
-                jev_result["jev_latency_ms"],
-            )
 
     # 5. Notify important emails
     if categoria in NOTIFY_CATEGORIES:

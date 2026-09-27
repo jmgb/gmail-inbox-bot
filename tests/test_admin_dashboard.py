@@ -12,12 +12,21 @@ from gmail_inbox_bot.admin_logs import SESSION_COOKIE, _make_session_cookie
 from gmail_inbox_bot.app import app
 
 
-def _row(category, jev_category, confidence, *, error=None, created="2026-09-21T10:00:00"):
+def _row(
+    category,
+    jev_category,
+    confidence,
+    *,
+    error=None,
+    created="2026-09-21T10:00:00",
+    model="openai/gpt-oss-120b",
+):
     return {
         "category": category,
         "jev_category": jev_category,
         "jev_confidence": confidence,
         "jev_error": error,
+        "model": model,
         "sender": "a@b.c",
         "subject": "Asunto",
         "created_at": created,
@@ -26,6 +35,26 @@ def _row(category, jev_category, confidence, *, error=None, created="2026-09-21T
 
 
 class TestAggregateJev:
+    def test_excluye_las_filas_que_decidio_jev(self):
+        """Desde el corte a Jev, category == jev_category por construcción.
+
+        Contarlas daría un 100 % de coincidencia falso y vaciaría la lista de
+        discrepancias justo cuando ya no hay con qué comparar. Solo cuentan las filas en
+        las que clasificó el LLM y Jev opinó al lado.
+        """
+        rows = [
+            _row("spam", "spam", 0.95, model="jev-1.13.0"),
+            _row("newsletters", "newsletters", 0.99, model="jev-1.13.0"),
+            _row("spam", "newsletters", 0.6),
+        ]
+
+        result = _aggregate_jev(rows)
+
+        assert result["total"] == 1
+        assert result["agreement_pct"] == 0.0
+        assert len(result["mismatches"]) == 1
+        assert result["decided_by_jev"] == 2
+
     def test_empty_rows(self):
         result = _aggregate_jev([])
         assert result["total"] == 0

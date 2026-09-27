@@ -1,10 +1,15 @@
-"""Clasificación sombra con Jev (TypeSafe.ai).
+"""Clasificación con Jev (TypeSafe.ai) — clasificador principal desde el 2026-09-27.
 
-Jev recibe el mismo email que el clasificador LLM y devuelve una categoría con
-probabilidades y confianza. En esta fase NO decide nada: su resultado solo se
-registra en métricas para comparar con el clasificador real.
+Jev recibe el email y devuelve una categoría con probabilidades y confianza. **Decide el
+routing**: la cadena LLM (``gpt-oss-120b`` → ``gpt-6-luna``) queda como fallback y solo
+entra si Jev devuelve error. Antes de esta fecha corría en sombra, sin decidir nada.
 
-Nunca propaga excepciones: cualquier fallo se convierte en ``jev_error``.
+La confianza se registra pero **no** se usa como umbral todavía: una clasificación de Jev
+con 0.40 decide igual que una de 0.99. El umbral por categoría es el siguiente paso
+pendiente (ver ``TASKS.md``).
+
+Nunca propaga excepciones: cualquier fallo se convierte en ``jev_error``, y eso es
+exactamente lo que dispara el fallback al LLM en ``bot._process_email``.
 """
 
 from __future__ import annotations
@@ -108,6 +113,47 @@ class JevShadow:
                 "jev_error": f"{type(exc).__name__}: {exc}"[:JEV_ERROR_MAX_CHARS],
                 "jev_latency_ms": _elapsed_ms(started),
             }
+
+
+def classification_from_jev(jev_result: dict) -> dict:
+    """Traduce la respuesta de Jev a la forma que consume el resto del pipeline.
+
+    El routing, la notificación, ``execute()`` y las métricas esperan el dict del
+    clasificador LLM (``categoria``, ``razon_clasificacion``, ``model_used``), así que Jev
+    se adapta a ese contrato en vez de tocar todo lo de abajo. No lleva ``usage`` ni
+    ``cost``: Jev no factura por tokens y registrar ceros falsearía el coste LLM.
+    """
+    return {
+        "categoria": jev_result["jev_category"],
+        "razon_clasificacion": _jev_reason(jev_result),
+        "model_used": jev_result.get("jev_model") or "jev",
+    }
+
+
+def _jev_reason(jev_result: dict) -> str:
+    """Motivo legible a partir de la confianza: Jev no devuelve prosa como el LLM.
+
+    Se incluye la segunda opción porque es lo que permite juzgar una clasificación dudosa
+    de un vistazo en el banner del borrador y en el dashboard.
+    """
+    confianza = jev_result.get("jev_confidence")
+    elegida = jev_result.get("jev_category")
+    razon = "Clasificado por Jev"
+    if isinstance(confianza, (int, float)):
+        razon += f" con confianza {confianza:.2f}"
+    alternativas = sorted(
+        (
+            (categoria, probabilidad)
+            for categoria, probabilidad in (jev_result.get("jev_probabilities") or {}).items()
+            if categoria != elegida
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    if alternativas:
+        segunda, probabilidad = alternativas[0]
+        razon += f" (siguiente opción: {segunda}, {probabilidad:.2f})"
+    return razon
 
 
 def build_jev_shadow(

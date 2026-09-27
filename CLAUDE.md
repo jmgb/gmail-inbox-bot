@@ -155,17 +155,30 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 - Preferir reglas por remitente/dominio (más fiables) sobre reglas por contenido del body
 - Documentar el caso real que motivó cada regla
 
-**Clasificación sombra con Jev (TypeSafe.ai)** — `gmail_inbox_bot/jev_shadow.py`. Si `JEV_API_KEY`
-está en el `.env`, cada email clasificado por el LLM se clasifica también con Jev y el resultado
-(`jev_category`, `jev_confidence`, `jev_probabilities`, `jev_latency_ms`, `jev_model`, `jev_error`)
-se guarda en la misma fila de `email_metrics`. Jev **no decide nada** en esta fase; la comparativa
-está en `/admin/dashboard` (sección "Jev vs LLM"). Los criterios de Jev viven en
-`gmail_inbox_bot/prompts/clasificador_jev.yml` (una entrada por categoría con `what` / `not_for` /
-`examples`, mismas claves que `routing`; un test comprueba la paridad). Ambos clasificadores usan
-el mismo formato (`email_format.format_email_for_classifier`), pero Jev limita el cuerpo a 6000
-caracteres. **Mientras dure la sombra, cada regla nueva del prompt LLM se replica en el YAML de
-Jev.** Si el YAML falta o es inválido el bot falla al
-arrancar (error de despliegue, a propósito). Diseño:
+**Jev (TypeSafe.ai) es el clasificador principal desde el 2026-09-27** —
+`gmail_inbox_bot/jev_shadow.py`. Si `JEV_API_KEY` está en el `.env`, **Jev decide la categoría** y
+el routing actúa sobre ella; la cadena LLM (`gpt-oss-120b` → `gpt-6-luna`) queda como **fallback y
+solo entra si Jev devuelve error**. Del 21 al 27 de septiembre corrió en sombra sin decidir nada.
+
+- **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_shadow()`
+  devuelve `None` y clasifica el LLM como antes.
+- **La confianza se registra pero no filtra**: una clasificación de Jev con `0.40` decide igual que
+  una con `0.99`. El umbral por categoría está pendiente (ver `TASKS.md`), y es lo que falta para
+  que esto sea seguro por construcción.
+- **`razon_clasificacion`** la sintetiza `classification_from_jev()` a partir de la confianza y la
+  segunda opción: Jev no devuelve prosa. Las filas decididas por Jev llevan `model=jev-<versión>`,
+  y **no** llevan `usage` ni `cost` (Jev no factura por tokens).
+- **La comparativa Jev vs LLM ya no crece**: si Jev decide, no hay clasificación LLM con la que
+  comparar. El dashboard excluye esas filas del cálculo (`_decided_by_jev`) para no reportar un
+  100 % falso, y las cuenta aparte en "Decididos por Jev".
+
+Los criterios de Jev viven en `gmail_inbox_bot/prompts/clasificador_jev.yml` (una entrada por
+categoría con `what` / `not_for` / `examples`, mismas claves que `routing`; un test comprueba la
+paridad). Ambos clasificadores usan el mismo formato
+(`email_format.format_email_for_classifier`), pero Jev limita el cuerpo a 6000 caracteres. **Cada
+regla nueva se escribe ahora en el YAML de Jev**, que es quien decide; el prompt LLM solo gobierna
+el fallback. Si el YAML falta o es inválido el bot falla al arrancar (error de despliegue, a
+propósito). Diseño:
 `docs/superpowers/specs/2026-09-21-jev-shadow-classification-design.md`.
 
 ## Despliegue
@@ -187,7 +200,7 @@ arrancar (error de despliegue, a propósito). Diseño:
 - **Lectura**: dashboard vía `/admin/api/metrics`
 - **SQL migrations**: `scripts/supabase_create_table.sql`
 - **SQL runner**: `uv run python scripts/supabase_sql.py "SELECT ..."`
-- **Columnas `jev_*`**: clasificación sombra de Jev; migración en `scripts/supabase_create_table.sql`
+- **Columnas `jev_*`**: clasificación de Jev; migración en `scripts/supabase_create_table.sql`. Desde el corte a principal, en las filas que decide Jev `category == jev_category` y `model=jev-<versión>`
   (aplicar antes de desplegar código que las escriba, o el upsert devuelve 400 y se pierde la fila).
 
 ## Comandos

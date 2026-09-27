@@ -39,7 +39,9 @@ JEV_CATEGORIES = (
     "spam",
     "otros",
 )
-_JEV_SELECT = "mailbox,category,jev_category,jev_confidence,jev_error,sender,subject,created_at"
+_JEV_SELECT = (
+    "mailbox,category,jev_category,jev_confidence,jev_error,model,sender,subject,created_at"
+)
 _CONFIDENCE_BUCKETS = (
     ("<0.5", 0.0, 0.5),
     ("0.5-0.7", 0.5, 0.7),
@@ -159,13 +161,26 @@ def _pct(part: int, whole: int) -> float:
     return round(100.0 * part / whole, 1) if whole else 0.0
 
 
+def _decided_by_jev(row: dict) -> bool:
+    """True si la clasificación de esa fila la decidió Jev, no el LLM."""
+    return str(row.get("model") or "").startswith("jev")
+
+
 def _aggregate_jev(rows: list[dict]) -> dict:
-    """Compara la categoría del LLM (``category``) con la sombra de Jev (``jev_category``).
+    """Compara la categoría del LLM (``category``) con la de Jev (``jev_category``).
+
+    Solo entran las filas en las que **clasificó el LLM** y Jev opinó al lado. Desde que Jev
+    es el clasificador principal (2026-09-27), en sus filas ``category == jev_category`` por
+    construcción: contarlas daría un 100 % de coincidencia falso y vaciaría la lista de
+    discrepancias. Se cuentan aparte en ``decided_by_jev`` para que se vea que la muestra de
+    comparación ya no crece.
 
     Las filas con ``jev_error`` cuentan como errores y no entran en la coincidencia.
     """
-    compared = [r for r in rows if r.get("jev_category") and not r.get("jev_error")]
-    errors = sum(1 for r in rows if r.get("jev_error"))
+    decided_by_jev = sum(1 for r in rows if _decided_by_jev(r))
+    comparable = [r for r in rows if not _decided_by_jev(r)]
+    compared = [r for r in comparable if r.get("jev_category") and not r.get("jev_error")]
+    errors = sum(1 for r in comparable if r.get("jev_error"))
 
     agreed = sum(1 for r in compared if r.get("category") == r.get("jev_category"))
 
@@ -209,6 +224,7 @@ def _aggregate_jev(rows: list[dict]) -> dict:
         "total": len(compared),
         "agreement_pct": _pct(agreed, len(compared)),
         "errors": errors,
+        "decided_by_jev": decided_by_jev,
         "by_confidence": by_confidence,
         "confusion": confusion,
         "categories": list(JEV_CATEGORIES),

@@ -694,7 +694,7 @@
         <div class="tables-grid" id="tablesContainer"></div>
 
         <div class="section-header">
-          <div class="section-title">Jev vs LLM (clasificación sombra)</div>
+          <div class="section-title">Jev vs LLM (comparación histórica, hasta el corte del 27 sep)</div>
         </div>
         <div class="cards" id="jevCards"></div>
         <div class="tables-grid" id="jevTables"></div>
@@ -964,12 +964,12 @@
         const tables = document.getElementById("jevTables");
         const mismatches = document.getElementById("jevMismatches");
 
-        if (!data.total && !data.errors) {
+        if (!data.total && !data.errors && !data.decided_by_jev) {
           cards.replaceChildren();
           mismatches.replaceChildren();
           const empty = document.createElement("div");
           empty.className = "empty-state";
-          empty.textContent = "Sin clasificaciones sombra de Jev en este periodo";
+          empty.textContent = "Sin clasificaciones de Jev en este periodo";
           tables.replaceChildren(empty);
           return;
         }
@@ -986,6 +986,10 @@
           <div class="card">
             <div class="card-label">Errores Jev</div>
             <div class="card-value">${fmtNum(data.errors)}</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Decididos por Jev (sin comparación)</div>
+            <div class="card-value">${fmtNum(data.decided_by_jev)}</div>
           </div>`;
 
         let bucketRows = "";

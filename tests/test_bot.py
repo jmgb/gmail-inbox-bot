@@ -256,13 +256,10 @@ class TestProcessEmail:
 
     @patch("gmail_inbox_bot.bot.record_email")
     @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
-    @patch(
-        "gmail_inbox_bot.bot.classify_email",
-        return_value={"categoria": "spam", "razon_clasificacion": "promo"},
-    )
+    @patch("gmail_inbox_bot.bot.classify_email")
     @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-    def test_jev_shadow_runs_after_successful_classification(
-        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
+    def test_jev_decide_y_no_se_llama_al_llm(
+        self, _mock_load, mock_classify, mock_execute, mock_record, mock_gmail, config
     ):
         jev = MagicMock()
         jev.classify.return_value = {
@@ -281,20 +278,85 @@ class TestProcessEmail:
         assert call["subject"] == "Oferta"
         assert call["body_text"] == "Compra ya"
         assert call["sender_address"] == "juan@empresa.com"
+        # Jev decide: la cadena LLM no se toca y no hay tokens ni coste que registrar.
+        mock_classify.assert_not_called()
+        assert mock_execute.call_args.args[3]["categoria"] == "spam"
         recorded = mock_record.call_args.kwargs
+        assert recorded["category"] == "spam"
+        assert recorded["model"] == "jev-1.13.0"
+        assert recorded["total_cost_usd"] is None
+        assert recorded["total_tokens"] is None
         assert recorded["jev_category"] == "spam"
         assert recorded["jev_confidence"] == 0.9
         assert recorded["jev_latency_ms"] == 500
 
     @patch("gmail_inbox_bot.bot.record_email")
-    @patch("gmail_inbox_bot.bot.classify_email", return_value=None)
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch("gmail_inbox_bot.bot.classify_email")
     @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-    def test_jev_shadow_skipped_when_classification_fails(
-        self, _mock_load, _mock_classify, _mock_record, mock_gmail, config
+    def test_la_razon_registrada_lleva_la_confianza_de_jev(
+        self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
     ):
         jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_category": "newsletters",
+            "jev_confidence": 0.89,
+            "jev_probabilities": {"newsletters": 0.89, "notificaciones": 0.07, "spam": 0.04},
+            "jev_latency_ms": 300,
+            "jev_model": "jev-1.13.0",
+        }
+
         _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
-        jev.classify.assert_not_called()
+
+        razon = mock_record.call_args.kwargs["classification_reason"]
+        assert "0.89" in razon
+        assert "notificaciones" in razon
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
+    @patch(
+        "gmail_inbox_bot.bot.classify_email",
+        return_value={"categoria": "personal", "razon_clasificacion": "pregunta directa"},
+    )
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_error_de_jev_cae_a_la_cadena_llm(
+        self, _mock_load, mock_classify, mock_execute, mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_error": "TypeSafeAPITimeoutError: boom",
+            "jev_latency_ms": 4000,
+        }
+
+        _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+
+        mock_classify.assert_called_once()
+        assert mock_execute.call_args.args[3]["categoria"] == "personal"
+        recorded = mock_record.call_args.kwargs
+        assert recorded["category"] == "personal"
+        assert recorded["jev_error"].startswith("TypeSafeAPITimeoutError")
+        assert "jev_category" not in recorded
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.classify_email", return_value=None)
+    @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
+    def test_error_de_jev_y_del_llm_etiqueta_error_ia(
+        self, _mock_load, mock_classify, mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_error": "TypeSafeAPITimeoutError: boom",
+            "jev_latency_ms": 4000,
+        }
+
+        result = _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+
+        mock_classify.assert_called_once()
+        assert "ERROR IA" in result
+        mock_gmail.update_email.assert_called_once_with(
+            config["email"], "msg_001", is_read=False, add_categories=["ERROR IA"]
+        )
+        assert mock_record.call_args.kwargs["category"] == "error_clasificacion"
 
     @patch("gmail_inbox_bot.bot.record_email")
     @patch("gmail_inbox_bot.bot.execute", return_value="tagged")
@@ -303,11 +365,14 @@ class TestProcessEmail:
         return_value={"categoria": "spam", "razon_clasificacion": ""},
     )
     @patch("gmail_inbox_bot.bot.load_prompt", return_value="system prompt")
-    def test_jev_shadow_none_records_no_jev_fields(
+    def test_sin_jev_configurado_decide_el_llm(
         self, _mock_load, _mock_classify, _mock_execute, mock_record, mock_gmail, config
     ):
+        """Vaciar JEV_API_KEY es el camino de vuelta: build_jev_* devuelve None."""
         _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=None)
+        _mock_classify.assert_called_once()
         recorded = mock_record.call_args.kwargs
+        assert recorded["category"] == "spam"
         assert not any(key.startswith("jev_") for key in recorded)
 
     @patch("gmail_inbox_bot.bot.record_email")
@@ -377,13 +442,15 @@ class TestProcessMailbox:
         assert "error" in results[0]
 
     @patch("gmail_inbox_bot.bot.record_email")
-    @patch(
-        "gmail_inbox_bot.bot.classify_email",
-        return_value={"categoria": "spam", "razon_clasificacion": "promo"},
-    )
-    def test_shadow_disagreement_preserves_real_mailbox_action(
-        self, _mock_classify, mock_record, mock_gmail, config
+    @patch("gmail_inbox_bot.bot.classify_email")
+    def test_la_categoria_de_jev_llega_hasta_la_accion_en_el_buzon(
+        self, mock_classify, mock_record, mock_gmail, config
     ):
+        """Extremo a extremo sin mockear execute: lo que Jev decide es lo que se hace.
+
+        Antes del 2026-09-27 este test comprobaba lo contrario — que un desacuerdo de la
+        sombra NO cambiaba la acción. Ahora Jev es el clasificador principal.
+        """
         mock_gmail.get_unread_emails.return_value = [_make_email()]
         config["routing"]["personal"] = {"action": "tag", "tag": "REVISAR IA"}
         jev = MagicMock()
@@ -395,7 +462,10 @@ class TestProcessMailbox:
 
         process_mailbox(mock_gmail, MagicMock(), config, jev=jev)
 
-        mock_gmail.update_email.assert_called_once_with(config["email"], "msg_001", is_read=True)
+        mock_classify.assert_not_called()
+        update = mock_gmail.update_email.call_args
+        assert update.args[:2] == (config["email"], "msg_001")
+        assert update.kwargs["add_categories"] == ["REVISAR IA"]
         recorded = mock_record.call_args.kwargs
-        assert recorded["category"] == "spam"
+        assert recorded["category"] == "personal"
         assert recorded["jev_category"] == "personal"
