@@ -164,7 +164,13 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
 
 - **Modelo por defecto**: `openai/gpt-oss-120b` vía **Groq** (`GROQ_API_KEY`).
 - **Fallback automático**: si Groq falla (quota/caída/rate-limit) reintenta con `gpt-6-luna` vía
-  **OpenAI** (`OPENAI_API_KEY`).
+  **OpenAI** (`OPENAI_API_KEY`). En producción **no se ha activado ni una vez** (0 registros en 15
+  días de log), así que conviene ejercitarlo a mano de vez en cuando en vez de descubrirlo con Groq
+  caído. Receta: invalidar `GROQ_API_KEY` **solo en el proceso de prueba** y llamar a
+  `classify_email` con el modelo por defecto — no forzando Luna como primario, que probaría otra
+  configuración (`reasoning_effort="max"`, ver "Razonamiento" abajo). Verificado el 2026-09-27:
+  Groq devuelve 401, responde `gpt-6-luna` con JSON válido y la causa queda en el log
+  (`🔁 Fallback usado ... motivo=AuthenticationError`), coste 0,000132 USD.
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
 - **Sombra con Jev (TypeSafe.ai)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
