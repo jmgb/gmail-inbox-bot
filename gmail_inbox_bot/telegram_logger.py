@@ -48,12 +48,22 @@ class TelegramHandler(logging.Handler):
 
 
 def setup_telegram_logging(chat_id: str | None = None) -> None:
-    """Attach TelegramHandler to gmail_inbox_bot loggers."""
+    """Attach TelegramHandler to gmail_inbox_bot loggers (idempotente).
+
+    Incluye ``gmail_inbox_bot.app`` porque ahí se loguea la muerte de los daemon threads
+    ("Bot thread crashed"), que es justo el fallo que nadie ve. Se llama tanto desde el
+    arranque de FastAPI como desde ``bot.run()``, así que se evita enganchar dos veces:
+    dos handlers = cada error notificado dos veces por Telegram.
+    """
     handler = TelegramHandler(chat_id=chat_id, level=logging.ERROR)
     for logger_name in (
+        "gmail_inbox_bot.app",
         "gmail_inbox_bot.bot",
         "gmail_inbox_bot.actions",
         "gmail_inbox_bot.gmail_client",
         "gmail_inbox_bot.classifier",
     ):
-        logging.getLogger(logger_name).addHandler(handler)
+        logger = logging.getLogger(logger_name)
+        if any(isinstance(h, TelegramHandler) for h in logger.handlers):
+            continue
+        logger.addHandler(handler)

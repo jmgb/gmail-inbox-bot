@@ -103,3 +103,38 @@ class TestSetupTelegramLogging:
         for name in target_loggers:
             logger = logging.getLogger(name)
             logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]
+
+    def test_incluye_el_logger_de_app_donde_se_registra_la_muerte_de_un_thread(self):
+        name = "gmail_inbox_bot.app"
+        logger = logging.getLogger(name)
+        logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]
+        try:
+            setup_telegram_logging(chat_id="789")
+            assert any(isinstance(h, TelegramHandler) for h in logger.handlers)
+        finally:
+            logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]
+
+    def test_no_duplica_handlers_al_llamarse_dos_veces(self):
+        """app.py y bot.run() lo llaman los dos: dos handlers = doble aviso por Telegram."""
+        names = [
+            "gmail_inbox_bot.app",
+            "gmail_inbox_bot.bot",
+            "gmail_inbox_bot.actions",
+            "gmail_inbox_bot.gmail_client",
+            "gmail_inbox_bot.classifier",
+        ]
+        for name in names:
+            logger = logging.getLogger(name)
+            logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]
+        try:
+            setup_telegram_logging(chat_id="789")
+            setup_telegram_logging(chat_id="789")
+            for name in names:
+                handlers = [
+                    h for h in logging.getLogger(name).handlers if isinstance(h, TelegramHandler)
+                ]
+                assert len(handlers) == 1, f"{name} tiene {len(handlers)} handlers de Telegram"
+        finally:
+            for name in names:
+                logger = logging.getLogger(name)
+                logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]

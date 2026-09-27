@@ -58,6 +58,12 @@ Cloudflare Email Routing ─► Gmail inbox
 Todo corre en un único proceso (`--server`): un servidor **FastAPI** (admin UI + health) con **dos
 daemon threads** en background — el bot de polling y el scheduler de recordatorios.
 
+`GET /health` informa del estado de esos dos threads y devuelve **503** si alguno ha muerto
+(`{"status": "degraded", "threads": {...}}`). Importa porque son daemon threads: si uno cae, el
+proceso sigue en pie y el servidor seguiría contestando 200, dejando el contenedor "Up" sin
+clasificar nada. El `HEALTHCHECK` del `Dockerfile` consulta ese endpoint, y la muerte del thread se
+notifica además por Telegram. En modo `DISABLE_BOT` los threads salen como `disabled`, no como caídos.
+
 ---
 
 ## Pipeline de procesamiento de email
@@ -499,6 +505,9 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
   `docker compose up -d --build`.
 - **Docker**: imagen `python:3.13-slim`, entrypoint `python -m gmail_inbox_bot --server`. Puerto
   **8007 → 8000**. Volúmenes: `./logs` y `./config` (el estado de recordatorios persiste en `logs/`).
+- **Healthcheck**: `HEALTHCHECK` sobre `/health` (urllib, sin `curl`: la imagen slim no lo trae).
+  `docker ps` pasa a mostrar `(healthy)`. Ojo: Docker **no reinicia** un contenedor `unhealthy` con
+  `restart: unless-stopped`; el aviso accionable es el de Telegram.
 - **Endpoints prod**: `https://email.pymechat.com/health`, `/admin/dashboard`, `/admin/logs`.
 
 ---

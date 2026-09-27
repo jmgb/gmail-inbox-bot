@@ -170,7 +170,7 @@ arrancar (error de despliegue, a propósito). Diseño:
 - **Puerto**: `8007` (mapeado a `8000` interno)
 - **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
 - **Log Viewer**: https://email.pymechat.com/admin/logs
-- **Health**: https://email.pymechat.com/health
+- **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto; el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
 - **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
 
 ## Métricas (Supabase)
