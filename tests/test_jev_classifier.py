@@ -239,3 +239,49 @@ class TestClassify:
         assert payload["jev_latency_ms"] == 0
         assert payload["jev_probabilities"] == {"spam": 0.0, "otros": 1.0}
         assert "jev_error" not in payload
+
+
+class TestRazonDeJev:
+    """El motivo lo sintetiza el código: Jev no devuelve prosa como el LLM."""
+
+    def test_incluye_la_segunda_opcion_cuando_es_relevante(self):
+        razon = jev_classifier._jev_reason(
+            {
+                "jev_category": "newsletters",
+                "jev_confidence": 0.62,
+                "jev_probabilities": {"newsletters": 0.62, "spam": 0.31, "otros": 0.07},
+            }
+        )
+        assert "0.62" in razon
+        assert "spam" in razon and "0.31" in razon
+
+    def test_omite_la_segunda_opcion_residual(self):
+        razon = jev_classifier._jev_reason(
+            {
+                "jev_category": "compras",
+                "jev_confidence": 1.0,
+                "jev_probabilities": {"compras": 1.0, "notificaciones": 0.0},
+            }
+        )
+        assert razon == "Clasificado por Jev con confianza 1.00"
+
+    def test_aguanta_una_respuesta_sin_probabilidades(self):
+        razon = jev_classifier._jev_reason({"jev_category": "otros", "jev_confidence": 0.5})
+        assert razon == "Clasificado por Jev con confianza 0.50"
+
+
+class TestClassificationFromJev:
+    def test_traduce_al_contrato_del_pipeline(self):
+        clasificacion = jev_classifier.classification_from_jev(
+            {
+                "jev_category": "finanzas",
+                "jev_confidence": 0.88,
+                "jev_probabilities": {"finanzas": 0.88, "spam": 0.12},
+                "jev_model": "jev-1.13.0",
+            }
+        )
+        assert clasificacion["categoria"] == "finanzas"
+        assert clasificacion["model_used"] == "jev-1.13.0"
+        # Sin usage ni cost: Jev no factura por tokens y un cero falsearía el coste LLM.
+        assert "usage" not in clasificacion
+        assert "cost" not in clasificacion
