@@ -527,6 +527,16 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
   `docker ps` pasa a mostrar `(healthy)`. Ojo: Docker **no reinicia** un contenedor `unhealthy` con
   `restart: unless-stopped`; el aviso accionable es el de Telegram.
 - **Endpoints prod**: `https://email.pymechat.com/health`, `/admin/dashboard`, `/admin/logs`.
+- **Docker socket**: el contenedor **no** monta `/var/run/docker.sock`. El visor lee los logs de
+  docker a través de `docker-socket-proxy` (`wollomatic/socket-proxy`), en una red `internal` que
+  solo comparten el bot y el proxy, con `-allowfrom=gmail-inbox-bot` y un `-allowGET` que permite
+  únicamente `/containers/gmail-inbox-bot/(json|logs)`. El montaje directo, aun en `:ro`, permitía
+  enumerar y leer los logs de **todos** los contenedores del VPS, y el visor solo lee el suyo.
+  El endpoint lo elige `DOCKER_API_TCP` (`admin_logs._docker_connection`): sin esa variable se
+  vuelve al socket unix, así que revertir es quitarla.
+  **Comprobación tras el primer despliegue** (no se puede validar antes, depende del DNS de la red
+  docker): abrir `/admin/logs` → pestaña "Docker: gmail-inbox-bot" y ver líneas. Si sale vacío o con
+  error, `docker logs gmail-docker-socket-proxy` dice si rechazó por `allowfrom` o por ruta.
 
 ---
 

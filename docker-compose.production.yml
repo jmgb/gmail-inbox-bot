@@ -9,6 +9,8 @@ services:
       # Registro de actividad Telegram para el triage matinal (autofix-control-plane).
       TELEGRAM_ACTIVITY_LOG: /var/log/telegram-activity/gmail-inbox-bot.jsonl
       TELEGRAM_ACTIVITY_HOST: finanzas
+      # El visor lee los logs de docker a través del socket-proxy, no montando el socket.
+      DOCKER_API_TCP: docker-socket-proxy:2375
     ports:
       # Solo localhost: nginx (email.pymechat.com) es la única entrada. Docker publica
       # en 0.0.0.0 saltándose ufw, así que sin 127.0.0.1 el puerto quedaba público.
@@ -16,11 +18,11 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       # Directorio (nunca el archivo): el bind de archivo fija el inodo.
       - /home/ubuntu/autofix-control-plane/logs/telegram:/var/log/telegram-activity
     restart: unless-stopped
-    networks: [pymechat-net]
+    networks: [pymechat-net, docker-proxy]
+    depends_on: [docker-socket-proxy]
     deploy:
       resources:
         limits:
@@ -28,6 +30,31 @@ services:
         reservations:
           memory: 128M
 
+  # El visor de logs solo necesita leer los logs de *este* contenedor, pero montar
+  # /var/run/docker.sock —aun en :ro— permite enumerar y leer los de todo el VPS. El proxy
+  # deja pasar exactamente ese GET y nada más. Mismo patrón que tuli-docker-socket-proxy.
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    container_name: gmail-docker-socket-proxy
+    command:
+      - "-loglevel=WARN"
+      - "-listenip=0.0.0.0"
+      - "-allowfrom=gmail-inbox-bot"
+      - "-allowGET=(/v[0-9.]+)?/containers/gmail-inbox-bot/(json|logs)"
+      - "-shutdowngracetime=5"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    restart: unless-stopped
+    # Solo en la red interna: el proxy no tiene salida a internet ni lo ve el resto del VPS.
+    networks: [docker-proxy]
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
 networks:
   pymechat-net:
     external: true
+  docker-proxy:
+    internal: true

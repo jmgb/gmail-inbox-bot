@@ -178,6 +178,7 @@ arrancar (error de despliegue, a propósito). Diseño:
 - **Log Viewer**: https://email.pymechat.com/admin/logs
 - **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto; el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
 - **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
+- **Docker socket**: el contenedor no monta `/var/run/docker.sock`; el visor habla con el sidecar `docker-socket-proxy` por TCP (`DOCKER_API_TCP`), restringido por `-allowfrom` y `-allowGET` a los logs de este único contenedor. Sin la variable, el código vuelve al socket unix
 
 ## Métricas (Supabase)
 

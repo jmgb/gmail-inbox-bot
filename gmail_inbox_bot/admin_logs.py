@@ -123,14 +123,30 @@ def _is_development() -> bool:
 
 DOCKER_SOCKET = "/var/run/docker.sock"
 
+# Si está definida (host:puerto), se habla con el Docker Engine API por TCP contra un
+# socket-proxy en vez de montar /var/run/docker.sock en este contenedor. El montaje, aun
+# en :ro, permite enumerar y leer *todos* los contenedores del VPS, cuando el visor solo
+# lee el suyo (ver DOCKER_CONTAINERS). El proxy restringe la ruta por allowlist.
+DOCKER_API_TCP_ENV = "DOCKER_API_TCP"
 
-def _docker_api_get(path: str, timeout: float = 15) -> bytes:
-    """Synchronous GET to the Docker Engine API via Unix socket."""
+
+def _docker_connection(timeout: float) -> http.client.HTTPConnection:
+    """Conexión al Docker Engine API: TCP si hay proxy configurado, socket unix si no."""
+    tcp_target = os.getenv(DOCKER_API_TCP_ENV, "").strip()
+    if tcp_target:
+        return http.client.HTTPConnection(tcp_target, timeout=timeout)
+
     conn = http.client.HTTPConnection("localhost", timeout=timeout)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(timeout)
     sock.connect(DOCKER_SOCKET)
     conn.sock = sock
+    return conn
+
+
+def _docker_api_get(path: str, timeout: float = 15) -> bytes:
+    """Synchronous GET to the Docker Engine API (Unix socket o socket-proxy TCP)."""
+    conn = _docker_connection(timeout)
     try:
         conn.request("GET", path)
         resp = conn.getresponse()
