@@ -156,11 +156,11 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 - Documentar el caso real que motivó cada regla
 
 **Jev (TypeSafe.ai) es el clasificador principal desde el 2026-09-27** —
-`gmail_inbox_bot/jev_shadow.py`. Si `JEV_API_KEY` está en el `.env`, **Jev decide la categoría** y
+`gmail_inbox_bot/jev_classifier.py`. Si `JEV_API_KEY` está en el `.env`, **Jev decide la categoría** y
 el routing actúa sobre ella; la cadena LLM (`gpt-oss-120b` → `gpt-6-luna`) queda como **fallback y
 solo entra si Jev devuelve error**. Del 21 al 27 de septiembre corrió en sombra sin decidir nada.
 
-- **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_shadow()`
+- **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_classifier()`
   devuelve `None` y clasifica el LLM como antes.
 - **La confianza se registra pero no filtra**: una clasificación de Jev con `0.40` decide igual que
   una con `0.99`. El umbral por categoría está pendiente (ver `TASKS.md`), y es lo que falta para

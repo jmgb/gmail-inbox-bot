@@ -26,7 +26,7 @@ from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
 from .email_format import format_email_for_classifier
 from .logger import setup_logger
 
-log = setup_logger("gmail_inbox_bot.jev_shadow", "logs/app.log")
+log = setup_logger("gmail_inbox_bot.jev_classifier", "logs/app.log")
 
 DEFAULT_CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
 JEV_MAX_BODY_CHARS = 6000
@@ -70,7 +70,7 @@ def build_state(
 
 
 @dataclass(frozen=True)
-class JevShadow:
+class JevClassifier:
     """Cliente Jev + pregunta ``Choice`` construida una vez por arranque."""
 
     client: TypeSafeClient
@@ -156,9 +156,9 @@ def _jev_reason(jev_result: dict) -> str:
     return razon
 
 
-def build_jev_shadow(
+def build_jev_classifier(
     env: Mapping[str, str], criteria_path: str | Path = DEFAULT_CRITERIA_PATH
-) -> JevShadow | None:
+) -> JevClassifier | None:
     """Construye el cliente Jev si hay ``JEV_API_KEY``; si no, ``None`` (sombra desactivada).
 
     Lanza si el YAML falta o no es válido para el SDK; es un error de despliegue, no de Jev.
@@ -177,7 +177,7 @@ def build_jev_shadow(
     # El SDK loguea cada reintento a INFO y propaga a root: solo queremos avisos.
     logging.getLogger("typesafe_sdk").setLevel(logging.WARNING)
     log.info("Clasificación sombra con Jev activada (%d categorías)", len(criteria))
-    return JevShadow(client=client, question=question)
+    return JevClassifier(client=client, question=question)
 
 
 def _elapsed_ms(started: float) -> int:

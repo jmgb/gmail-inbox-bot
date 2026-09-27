@@ -14,7 +14,7 @@ from gmail_inbox_bot.bot import (
     process_mailbox,
 )
 from gmail_inbox_bot.classifier import GPT_OSS_120B
-from gmail_inbox_bot.jev_shadow import JevShadow
+from gmail_inbox_bot.jev_classifier import JevClassifier
 from gmail_inbox_bot.telegram_logger import TelegramHandler
 
 # ------------------------------------------------------------------
@@ -385,7 +385,7 @@ class TestProcessEmail:
     ):
         client = MagicMock()
         client.system_one.side_effect = RuntimeError("x" * 500)
-        jev = JevShadow(
+        jev = JevClassifier(
             client=client, question=Choice(instructions="q", criteria={"spam": "x", "otros": "y"})
         )
         telegram = MagicMock()

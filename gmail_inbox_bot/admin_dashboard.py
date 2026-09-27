@@ -272,6 +272,9 @@ async def api_metrics(
     return result
 
 
+# La ruta conserva el nombre "jev_shadow" aunque el módulo se llame jev_classifier: es la URL
+# que consume admin_dashboard.html, y las columnas jev_* del esquema tampoco se renombran.
+# Los nombres internos describen lo que hace el código; los contratos externos no se mueven.
 @router.get("/api/jev_shadow")
 async def api_jev_shadow(
     request: Request,

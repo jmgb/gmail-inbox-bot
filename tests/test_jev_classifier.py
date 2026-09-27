@@ -1,4 +1,4 @@
-"""Tests for jev_shadow — clasificación sombra con Jev (TypeSafe.ai)."""
+"""Tests for jev_classifier — clasificación sombra con Jev (TypeSafe.ai)."""
 
 import json
 from pathlib import Path
@@ -9,12 +9,12 @@ import httpx2
 import yaml
 from typesafe_sdk import Choice, TypeSafeClient
 
-from gmail_inbox_bot import jev_shadow
-from gmail_inbox_bot.jev_shadow import (
+from gmail_inbox_bot import jev_classifier
+from gmail_inbox_bot.jev_classifier import (
     JEV_ERROR_MAX_CHARS,
     JEV_MAX_BODY_CHARS,
-    JevShadow,
-    build_jev_shadow,
+    JevClassifier,
+    build_jev_classifier,
     build_state,
     load_criteria,
 )
@@ -83,10 +83,10 @@ class TestBuildState:
         assert state.count("x") == JEV_MAX_BODY_CHARS
 
 
-class TestBuildJevShadow:
+class TestBuildJevClassifier:
     def test_returns_none_without_key(self):
-        assert build_jev_shadow({}, CRITERIA_PATH) is None
-        assert build_jev_shadow({"JEV_API_KEY": ""}, CRITERIA_PATH) is None
+        assert build_jev_classifier({}, CRITERIA_PATH) is None
+        assert build_jev_classifier({"JEV_API_KEY": ""}, CRITERIA_PATH) is None
 
     def test_real_sdk_bounds_request_body_timeout_and_retries(self, monkeypatch):
         attempts = []
@@ -98,8 +98,8 @@ class TestBuildJevShadow:
         def client(**kwargs):
             return TypeSafeClient(**kwargs, transport=httpx2.MockTransport(respond))
 
-        monkeypatch.setattr(jev_shadow, "TypeSafeClient", client)
-        shadow = build_jev_shadow({"JEV_API_KEY": "apikey_test"}, CRITERIA_PATH)
+        monkeypatch.setattr(jev_classifier, "TypeSafeClient", client)
+        shadow = build_jev_classifier({"JEV_API_KEY": "apikey_test"}, CRITERIA_PATH)
 
         result = shadow.classify(
             subject="s",
@@ -128,7 +128,7 @@ class TestBuildJevShadow:
 class TestClassify:
     def _shadow(self, client):
         question = Choice(instructions="q", criteria={"spam": "x", "otros": "y"})
-        return JevShadow(client=client, question=question)
+        return JevClassifier(client=client, question=question)
 
     def test_maps_response_to_dict(self):
         client = MagicMock()
@@ -217,7 +217,7 @@ class TestClassify:
     def test_zero_confidence_and_latency_survive_metrics_persistence(self, monkeypatch):
         monkeypatch.setenv("SUPABASE_URL", "https://metrics.example.test")
         monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-key")
-        monkeypatch.setattr(jev_shadow.time, "perf_counter", lambda: 42.0)
+        monkeypatch.setattr(jev_classifier.time, "perf_counter", lambda: 42.0)
         post = MagicMock()
         monkeypatch.setattr("httpx2.post", post)
         client = MagicMock()

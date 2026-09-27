@@ -12,7 +12,7 @@ from .actions import already_processed, execute
 from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
-from .jev_shadow import JevShadow, build_jev_shadow, classification_from_jev
+from .jev_classifier import JevClassifier, build_jev_classifier, classification_from_jev
 from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 from .mail_processing import (
@@ -130,7 +130,7 @@ def _process_email(
     email_msg: dict,
     *,
     dry_run: bool = False,
-    jev: JevShadow | None = None,
+    jev: JevClassifier | None = None,
 ) -> str:
     """Process a single email through the full pipeline. Returns status string."""
     msg_id = email_msg["id"]
@@ -210,7 +210,7 @@ def _process_email(
     system_prompt = load_prompt(prompt_file)
 
     # Jev decide; la cadena LLM (gpt-oss-120b -> gpt-6-luna) es el fallback ante un error
-    # de Jev. Sin JEV_API_KEY, build_jev_shadow() devuelve None y decide el LLM como antes:
+    # de Jev. Sin JEV_API_KEY, build_jev_classifier() devuelve None y decide el LLM como antes:
     # vaciar esa variable es el camino de vuelta, sin tocar código.
     jev_result: dict = {}
     classification: dict | None = None
@@ -329,7 +329,7 @@ def process_mailbox(
     *,
     dry_run: bool = False,
     query: str = "is:unread in:inbox",
-    jev: JevShadow | None = None,
+    jev: JevClassifier | None = None,
 ) -> list[str]:
     """Poll one mailbox and process all unread emails. Returns list of results."""
     user_email = config["email"]
@@ -388,7 +388,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     env = load_env()
     setup_telegram_logging(chat_id=os.environ.get("TELEGRAM_CHAT_ID"))
     openai_client = _build_llm_clients(env)
-    jev = build_jev_shadow(env)
+    jev = build_jev_classifier(env)
     configs = load_mailbox_configs()
 
     if not configs:

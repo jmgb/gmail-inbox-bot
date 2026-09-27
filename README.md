@@ -174,7 +174,7 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   (`🔁 Fallback usado ... motivo=AuthenticationError`), coste 0,000132 USD.
 - **Credenciales parciales**: los modelos cuyo proveedor no está configurado se eliminan del plan;
   con solo OpenAI, la petición empieza directamente en Luna, y con solo Groq no intenta Luna.
-- **Jev decide (desde el 2026-09-27)**: si `JEV_API_KEY` está definida, `jev_shadow.py` clasifica
+- **Jev decide (desde el 2026-09-27)**: si `JEV_API_KEY` está definida, `jev_classifier.py` clasifica
   con Jev (`typesafe-sdk`, primitiva `Choice`) y **su categoría es la que manda en el routing**. Los
   dos puntos anteriores (Groq y su fallback a OpenAI) pasan a ser el **fallback de segundo nivel**:
   solo se llama al LLM si Jev devuelve error. Sin `JEV_API_KEY` clasifica el LLM, como antes del

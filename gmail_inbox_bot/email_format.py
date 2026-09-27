@@ -1,6 +1,6 @@
 """Formato del email compartido por los clasificadores (LLM y Jev).
 
-Módulo sin dependencias internas: ``classifier`` y ``jev_shadow`` lo importan
+Módulo sin dependencias internas: ``classifier`` y ``jev_classifier`` lo importan
 sin riesgo de ciclos (``mail_processing`` → ``actions`` → ``classifier``).
 """
 
