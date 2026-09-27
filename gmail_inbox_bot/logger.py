@@ -56,6 +56,15 @@ def _handler_targets_path(handler: logging.Handler, path: str) -> bool:
     return os.path.abspath(handler.baseFilename) == os.path.abspath(path)
 
 
+def _resolve_log_level(default: int = logging.INFO) -> int:
+    """Traduce ``LOG_LEVEL`` a un nivel de logging; un valor no reconocido cae a *default*."""
+    raw = os.environ.get("LOG_LEVEL", "").strip().upper()
+    if not raw:
+        return default
+    level = logging.getLevelName(raw)
+    return level if isinstance(level, int) else default
+
+
 def setup_logger(
     name: str,
     log_file: str,
@@ -67,9 +76,13 @@ def setup_logger(
     if logger.handlers:
         return logger
 
-    # Nivel global
-    level_console = logging.DEBUG if debug_mode else logging.INFO
-    level_file = logging.DEBUG
+    # Nivel global: lo manda LOG_LEVEL (INFO por defecto); debug_mode lo fuerza a DEBUG.
+    # No es cosmético: a DEBUG el clasificador volca el JSON completo de la clasificación,
+    # que incluye el cuerpo del email. Con el handler de fichero fijado a DEBUG ese cuerpo
+    # se persistía siempre en app.log, y app.log se descarga desde /admin/logs.
+    level = logging.DEBUG if debug_mode else _resolve_log_level()
+    level_console = level
+    level_file = level
 
     # Formatter extendido con timezone de Madrid
     fmt = (

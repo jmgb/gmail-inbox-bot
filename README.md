@@ -322,7 +322,7 @@ templates: { categoria: { esp: "...", pt: "..." } } # respuestas fijas
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | Métricas (opcional) |
 | `LOGS_VIEWER_PASSWORD` | Password del visor de logs |
 | `SENTRY_DSN` | Observabilidad (opcional) |
-| `LOG_LEVEL` / `ENVIRONMENT` | Runtime |
+| `LOG_LEVEL` / `ENVIRONMENT` | Runtime. `LOG_LEVEL` (default `INFO`) gobierna consola y `logs/app.log`: a `DEBUG` se persiste el JSON completo de la clasificación, que incluye el cuerpo del email |
 | `DISABLE_BOT` | Si truthy, solo admin UI (sin polling ni scheduler) |
 | `DRY_RUN` | Si truthy, los background threads operan en seco |
 
