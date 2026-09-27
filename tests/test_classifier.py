@@ -16,17 +16,12 @@ from llm_gateway import (
 
 from gmail_inbox_bot.classifier import (
     DEFAULT_MODEL,
-    GPT_5,
-    GPT_5_LUNA,
+    GPT_6_LUNA,
     GPT_OSS_120B,
     classify_email,
     generate_response,
 )
 from gmail_inbox_bot.llm_gateway_client import SynchronousLLMGateway
-
-
-def test_gpt_5_alias_uses_astra():
-    assert GPT_5 == "gpt-6-astra"
 
 
 def _response(
@@ -311,10 +306,10 @@ class TestProviderRoutingAndFallback:
             "n",
             "e@e.com",
             False,
-            model=GPT_5_LUNA,
+            model=GPT_6_LUNA,
         )
 
-        assert client.openai.calls == [GPT_5_LUNA]
+        assert client.openai.calls == [GPT_6_LUNA]
         assert client.groq.calls == []
         assert client.openai.requests[0].reasoning_effort == "max"
 
@@ -336,10 +331,10 @@ class TestProviderRoutingAndFallback:
         )
 
         assert client.groq.calls == [GPT_OSS_120B]
-        assert client.openai.calls == [GPT_5_LUNA]
+        assert client.openai.calls == [GPT_6_LUNA]
         assert client.groq.requests[0].reasoning_effort is None
         assert client.openai.requests[0].reasoning_effort is None
-        assert result["model_used"] == GPT_5_LUNA
+        assert result["model_used"] == GPT_6_LUNA
 
     def test_groq_failure_falls_back_and_logs_the_reason(self, caplog):
         client = _SynchronousGatewayDouble(
@@ -380,7 +375,7 @@ class TestProviderRoutingAndFallback:
         )
 
         assert client.groq.calls == [GPT_OSS_120B]
-        assert client.openai.calls == [GPT_5_LUNA]
+        assert client.openai.calls == [GPT_6_LUNA]
         assert result is None
 
     def test_both_providers_fail_logs_last_error(self, caplog):
@@ -422,8 +417,8 @@ class TestProviderRoutingAndFallback:
             model=GPT_OSS_120B,
         )
 
-        assert client.openai.calls == [GPT_5_LUNA]
-        assert result["model_used"] == GPT_5_LUNA
+        assert client.openai.calls == [GPT_6_LUNA]
+        assert result["model_used"] == GPT_6_LUNA
 
 
 class TestGenerateResponse:

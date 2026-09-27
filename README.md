@@ -77,7 +77,7 @@ Por cada email no leído del inbox (`gmail_inbox_bot/bot.py::_process_email`):
 3. **Detección de reenvíos** — si el remitente coincide con `forwarded_from`, se intenta extraer el
    remitente original del cuerpo para responder a la persona correcta (o forzar borrador con aviso si
    no se puede extraer).
-4. **Clasificación LLM** — devuelve `categoria`, `idioma` y `razon_clasificacion`. Si falla → tag
+4. **Clasificación LLM** — devuelve `categoria` y `razon_clasificacion`. Si falla → tag
    `ERROR IA` (queda sin leer en el inbox).
 5. **Notificación** — si la categoría está en `NOTIFY_CATEGORIES`, avisa por Telegram (actualmente
    desactivado, ver más abajo).

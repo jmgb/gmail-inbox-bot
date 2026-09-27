@@ -36,3 +36,16 @@ ORDER BY created_at DESC;
 
 Mientras dure la sombra: no cambiar el prompt LLM salvo error grave y, si se cambia, replicar la
 regla en `gmail_inbox_bot/prompts/clasificador_jev.yml` el mismo día.
+
+## El camino de respuesta con plantillas está sin usar en este repo (27 sep 2026)
+
+Ningún buzón de `config/` define `templates`: el routing real solo usa `tag`, `move`,
+`tag_and_move` y `silent`. Eso deja sin ejercitar en producción `_get_template_body`, las
+plantillas `esp`/`pt` y las acciones `reply`/`reply_with_attachment`/`dynamic_reply`, que solo
+las cubren los tests con el `MOCK_CONFIG` heredado de `pacto-mundial-bot`. Además la rama `pt`
+decide por igualdad exacta sobre un campo `idioma` que el prompt de este repo **no** devuelve
+(en pacto ese mismo código se corrigió el 27 sep con `_normalize_lang_key`).
+
+Decidir: (a) mantenerlo como capacidad documentada y portar la normalización de pacto para que
+las dos copias no divergan, o (b) retirar el camino de plantillas de este repo y quedarse con
+las acciones que se usan. No tocado ahora porque es un refactor, no limpieza.

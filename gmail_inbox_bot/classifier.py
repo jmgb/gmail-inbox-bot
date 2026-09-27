@@ -20,14 +20,13 @@ from .logger import setup_logger
 log = setup_logger("gmail_inbox_bot.classifier", "logs/app.log")
 
 # Default model — overridden by YAML config per mailbox
-GPT_5 = "gpt-6-astra"
-GPT_5_LUNA = "gpt-6-luna"
+GPT_6_LUNA = "gpt-6-luna"
 GPT_OSS_120B = "openai/gpt-oss-120b"
 DEFAULT_MODEL = GPT_OSS_120B
 
 # Si Groq falla (quota, caída, rate limit), reintentar con OpenAI.
 FALLBACK_MODEL_MAP = {
-    GPT_OSS_120B: GPT_5_LUNA,
+    GPT_OSS_120B: GPT_6_LUNA,
 }
 
 
@@ -61,7 +60,7 @@ def _request(
         system_prompt=system_prompt,
         messages=(Message(role="user", content=user_content),),
         response_format=response_format,
-        reasoning_effort="max" if primary_model == GPT_5_LUNA else None,
+        reasoning_effort="max" if primary_model == GPT_6_LUNA else None,
         retry_policy=RetryPolicy.disabled(),
         fallback_policy=FallbackPolicy.models_in_order(*fallback_models),
         source=source,
@@ -149,19 +148,13 @@ def classify_email(
         _log_fallback_if_used(response, source="classify_email")
         result = dict(response.output)
         categoria = result.get("categoria", "")
-        idioma = result.get("idioma", "")
         razon = _sanitize_reason(result.get("razon_clasificacion", ""))
         result["razon_clasificacion"] = razon
         result["model_used"] = response.execution.model_used
         metadata = build_cost_metadata(response)
         if metadata:
             result.update(metadata)
-        log.info(
-            "📋 Clasificación: categoria=%s | idioma=%s | razón=%s",
-            categoria,
-            idioma,
-            razon,
-        )
+        log.info("📋 Clasificación: categoria=%s | razón=%s", categoria, razon)
         log.debug("Clasificación JSON completo: %s", json.dumps(result, ensure_ascii=False))
         return result
     except AllAttemptsFailed as exc:
