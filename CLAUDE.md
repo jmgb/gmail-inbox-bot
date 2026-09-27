@@ -93,12 +93,17 @@ qué hacer.
 
 ### Idempotencia y prevención de bucles
 
-El bot tiene dos mecanismos de idempotencia:
+El bot tiene tres mecanismos de idempotencia:
 
-1. **Acciones que quitan INBOX**: `move_email` remueve el label `INBOX`, así el query
+1. **La query del poll excluye los `PROCESSED_TAGS`**: `build_poll_query()` (`mail_processing.py`)
+   añade un `-label:"…"` por tag a la `query` del buzón, así que Gmail no devuelve los emails ya
+   procesados y el bot no descarga su cuerpo. Se deriva de `PROCESSED_TAGS`, no de una lista copiada.
+2. **Acciones que quitan INBOX**: `move_email` remueve el label `INBOX`, así el query
    `is:unread in:inbox` no lo encuentra en el siguiente poll.
-2. **`already_processed()`**: verifica si el email tiene algún tag de `PROCESSED_TAGS`
-   (ej. `RESPONDIDO IA`, `REVISAR IA`, `ERROR IA`). Si lo tiene, lo salta.
+3. **`already_processed()`**: verifica si el email tiene algún tag de `PROCESSED_TAGS`
+   (ej. `RESPONDIDO IA`, `REVISAR IA`, `ERROR IA`). Si lo tiene, lo salta. Se mantiene aunque el
+   mecanismo 1 lo cubra: es la red de seguridad si se renombra un label o alguien sobreescribe la
+   `query` del YAML sin las exclusiones.
 
 **Flujo para categorías que se quedan en inbox** (`personal`, `finanzas`, `otros`):
 
@@ -106,8 +111,9 @@ El bot tiene dos mecanismos de idempotencia:
 2. `_handle_tag` → añade label `REVISAR IA`, marca leído
 3. Override `is_read: false` → vuelve a poner `UNREAD`
 4. Estado final → labels: `INBOX`, `UNREAD`, `REVISAR IA`
-5. Siguiente poll (`is:unread in:inbox`) → lo encuentra → `already_processed()` detecta
-   `REVISAR IA` ∈ `PROCESSED_TAGS` → **skip** → sin bucle
+5. Siguiente poll → la query lleva `-label:"REVISAR IA"`, así que Gmail **ya no lo devuelve** y no
+   se descarga su cuerpo. Si llegara (label renombrado, query sobreescrita), `already_processed()`
+   detecta `REVISAR IA` ∈ `PROCESSED_TAGS` → **skip** → sin bucle
 
 El email queda **sin leer en el inbox** para que el usuario lo vea, pero el bot no lo reprocesa.
 

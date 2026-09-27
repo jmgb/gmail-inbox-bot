@@ -3,11 +3,31 @@
 import html as html_lib
 import re
 
-from .actions import TAG_PENDING_MANAGE
+from .actions import PROCESSED_TAGS, TAG_PENDING_MANAGE
 from .ib_trades import notify_trade, parse_trade
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.mail_processing", "logs/app.log")
+
+
+def build_poll_query(base_query: str) -> str:
+    """Añade a *base_query* la exclusión de los emails que ya llevan un tag de procesado.
+
+    Las categorías que se quedan en el inbox (``personal``, ``finanzas``, ``otros``) siguen
+    sin leer a propósito, así que ``is:unread in:inbox`` las devuelve en cada poll y el bot
+    se descargaba el mensaje completo para luego saltarlo en ``already_processed()``. Con la
+    exclusión el filtrado lo hace Gmail y no baja nada. ``already_processed()`` se mantiene
+    como red de seguridad: si un label se renombra o alguien sobreescribe la query, el bot
+    sigue sin reprocesar.
+
+    Se deriva de ``PROCESSED_TAGS`` para que un tag nuevo entre solo, sin lista paralela.
+    """
+    query = base_query
+    for tag in sorted(PROCESSED_TAGS):
+        exclusion = f'-label:"{tag}"'
+        if exclusion not in query:
+            query = f"{query} {exclusion}"
+    return query
 
 
 def apply_pre_filters(

@@ -43,8 +43,8 @@ Cloudflare Email Routing ─► Gmail inbox
                               │
         (cada poll, ~10 min)  ▼
                      Bot de polling ──► Gmail API
-                       1. lee no leídos (is:unread in:inbox)
-                       2. idempotencia (PROCESSED_TAGS)
+                       1. lee no leídos (is:unread in:inbox, menos PROCESSED_TAGS)
+                       2. idempotencia (PROCESSED_TAGS, red de seguridad)
                        3. pre-filtros (por remitente/asunto)
                        4. clasifica con LLM (OpenAI/Groq)
                        5. ejecuta acción (tag/move/reply/forward/…)
@@ -70,7 +70,8 @@ notifica además por Telegram. En modo `DISABLE_BOT` los threads salen como `dis
 
 Por cada email no leído del inbox (`gmail_inbox_bot/bot.py::_process_email`):
 
-1. **Idempotencia** — si el email ya tiene algún tag de `PROCESSED_TAGS`, se salta.
+1. **Idempotencia** — si el email ya tiene algún tag de `PROCESSED_TAGS`, se salta. Gmail ya los
+   excluye en la query (`build_poll_query`), así que en condiciones normales no llegan aquí.
 2. **Pre-filtros** — reglas rápidas por remitente/asunto que cortocircuitan la clasificación
    (`mail_processing.py::apply_pre_filters`). Si alguna coincide, se ejecuta su acción y se termina.
 3. **Detección de reenvíos** — si el remitente coincide con `forwarded_from`, se intenta extraer el
@@ -240,16 +241,27 @@ uv run python -m gmail_inbox_bot.calendar_reminders --once             # envía 
 
 ## Idempotencia y prevención de bucles
 
-Dos mecanismos evitan reprocesar o entrar en bucle:
+Tres mecanismos evitan reprocesar o entrar en bucle:
 
-1. **Acciones que quitan `INBOX`** (`move`, `tag_and_move`…) → el query `is:unread in:inbox` no vuelve
+1. **La query del poll excluye los tags ya procesados** (`build_poll_query`, `mail_processing.py`) →
+   a la query del buzón se le añade un `-label:"…"` por cada tag de `PROCESSED_TAGS`, así que Gmail
+   no devuelve esos emails y el bot **no descarga nada** de ellos. Se deriva de `PROCESSED_TAGS`,
+   sin lista paralela: un tag nuevo entra solo.
+2. **Acciones que quitan `INBOX`** (`move`, `tag_and_move`…) → el query `is:unread in:inbox` no vuelve
    a encontrar el email.
-2. **`already_processed()`** → si el email tiene un tag de `PROCESSED_TAGS` (`RESPONDIDO IA`,
-   `REVISAR IA`, `ERROR IA`, `PENDIENTE GESTIONAR`…), se salta.
+3. **`already_processed()`** → si el email tiene un tag de `PROCESSED_TAGS` (`RESPONDIDO IA`,
+   `REVISAR IA`, `ERROR IA`, `PENDIENTE GESTIONAR`…), se salta. Se mantiene como **red de seguridad**:
+   cubre un label renombrado o una `query` sobreescrita en el YAML sin las exclusiones.
 
 Para categorías que se quedan en el inbox (`personal`, `finanzas`, `otros`): el email queda **sin leer
-con `REVISAR IA`**; en el siguiente poll `already_processed()` lo detecta y lo salta. El usuario lo ve;
-el bot no lo reprocesa.
+con `REVISAR IA`**. El usuario lo ve; el bot no lo reprocesa ni lo vuelve a bajar.
+
+**Por qué el mecanismo 1**: esos emails siguen sin leer en el inbox a propósito, así que
+`is:unread in:inbox` los devolvía en cada poll y `get_unread_emails` hacía un
+`messages.get?format=full` — el mensaje entero — antes de llegar al `already_processed()` que los
+descartaba. Con un email aparcado son 144 descargas completas al día; con veinte, 2.880. No gastaba
+LLM (nunca se clasificaban), pero sí cuota de Gmail, ancho de banda y legibilidad del log, que
+repetía `Found 1 unread email(s)` sin ninguna acción detrás.
 
 ---
 

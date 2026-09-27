@@ -18,6 +18,7 @@ from .logger import setup_logger
 from .mail_processing import (
     _is_forwarded_email,
     apply_pre_filters,
+    build_poll_query,
     extract_original_sender,
     strip_html,
 )
@@ -324,9 +325,10 @@ def process_mailbox(
     user_email = config["email"]
     top = config.get("max_emails_per_poll", 50)
 
-    log.info("Polling mailbox: %s (top=%d, query=%s)", user_email, top, query)
+    poll_query = build_poll_query(query)
+    log.info("Polling mailbox: %s (top=%d, query=%s)", user_email, top, poll_query)
     try:
-        emails = gmail.get_unread_emails(user_email, top=top, query=query)
+        emails = gmail.get_unread_emails(user_email, top=top, query=poll_query)
     except Exception:
         log.exception("Failed to fetch emails for %s", user_email)
         return ["error — failed to fetch emails"]
