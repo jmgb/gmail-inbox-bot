@@ -77,9 +77,11 @@ def setup_logger(
         return logger
 
     # Nivel global: lo manda LOG_LEVEL (INFO por defecto); debug_mode lo fuerza a DEBUG.
-    # No es cosmético: a DEBUG el clasificador volca el JSON completo de la clasificación,
-    # que incluye el cuerpo del email. Con el handler de fichero fijado a DEBUG ese cuerpo
-    # se persistía siempre en app.log, y app.log se descarga desde /admin/logs.
+    # El handler de fichero estaba fijado a DEBUG e ignoraba LOG_LEVEL, así que app.log
+    # recogía el volcado del clasificador y de las métricas pasara lo que pasara. Aquí ese
+    # volcado no lleva el cuerpo del email (el prompt no devuelve el texto original), pero
+    # app.log se descarga desde /admin/logs y el mismo logger, copiado en pacto-mundial-bot,
+    # sí persistía el cuerpo íntegro del correo del tercero.
     level = logging.DEBUG if debug_mode else _resolve_log_level()
     level_console = level
     level_file = level

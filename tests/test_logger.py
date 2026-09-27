@@ -1,7 +1,9 @@
 """El nivel de los handlers lo gobierna LOG_LEVEL, no un DEBUG fijo.
 
-El caso que importa: a nivel DEBUG el clasificador volca el JSON completo, que
-incluye el cuerpo del email. Con LOG_LEVEL=INFO eso no debe llegar al fichero.
+El caso que importa: a nivel DEBUG se volcaban al fichero el JSON del clasificador y
+las métricas pasara lo que pasara, porque el handler ignoraba LOG_LEVEL. Con
+LOG_LEVEL=INFO nada de nivel DEBUG debe llegar a app.log, que se descarga desde
+/admin/logs.
 """
 
 import logging
