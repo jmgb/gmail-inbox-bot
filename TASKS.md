@@ -1,13 +1,32 @@
 # TASKS — gmail-inbox-bot
 
-## Facturas por enlace (sin PDF adjunto): ángulo muerto del cron mensual (31 ago 2026)
+## Categoría `facturas`: revisar las primeras decisiones (creada el 30 sep 2026, revisar el 7 oct)
 
-`scripts/download_invoice_emails.py` solo ve emails con PDF adjunto (`has:attachment filename:pdf`).
-Las facturas que llegan como **enlace a un portal** (Stripe, algunos SaaS) son invisibles: ni se
-descargan ni aparecen en `revisar.csv`. Mejora acordada con el usuario: una **segunda query** del
-mismo mes con las mismas `KEYWORDS` pero **sin** `has:attachment`, y volcar los asuntos no cubiertos
-por la primera pasada a `revisar.csv` (solo listar, no descargar — descargar sería scraping de
-portales, fuera de alcance). Contexto completo en
+Desde el 30 sep las facturas y recibos de cobros ya hechos salen del inbox a la etiqueta
+`Facturas`, **leídas** (decisión del usuario). Un error ahí no lo ve nadie: comprobar que no se ha
+colado nada que pedía acción, sobre todo por debajo de 0.8 de confianza.
+
+```sql
+SELECT created_at, mailbox, sender, subject, jev_confidence
+FROM email_metrics
+WHERE category = 'facturas'
+ORDER BY jev_confidence ASC, created_at DESC;
+```
+
+Evidencia de la puesta en marcha (reclasificación con Jev de los emails con `REVISAR IA` que había
+en el inbox; se movieron 79 a `Facturas`):
+- Fallos iniciales, ya corregidos con reglas en `not_for`: persona que envía su factura
+  (`alfonso@azalea211.com`, 0.86), cobro de un cliente vía Stripe (0.65) y altas de suscripción
+  (0.71–0.85).
+- **Jev no es determinista en confianzas bajas**: entre dos pasadas iguales cambiaron 3 emails por
+  debajo de 0.6 ("Tu suscripción a … plan Pro" fue y vino). Refuerza el umbral de abajo.
+- Registro de lo movido (con los labels previos, para revertir):
+  `logs/retro_facturas_moved_2026-09-30.jsonl` (solo en local, no versionado).
+
+El cron mensual (`scripts/download_invoice_emails.py`) lista ahora en `facturas_sin_pdf.csv` las
+facturas por enlace a un portal (`label:Facturas -filename:pdf`), que antes eran un ángulo muerto.
+Solo ve lo que Jev etiquetó `facturas`; si se escapan facturas por enlace, la alternativa acordada
+el 31 ago (misma query con `KEYWORDS` sin `has:attachment`) sigue disponible. Contexto:
 `docs/superpowers/plans/2026-08-31-descarga-facturas-email-mensual.md`.
 
 ## Jev es el clasificador principal: umbral de confianza pendiente (27 sep 2026)
@@ -34,8 +53,11 @@ Jev" para que se vea que esa muestra ya no crece.
 1. **Umbral de confianza por categoría** — es lo único que falta para que esto sea seguro por
    construcción. Hoy una clasificación de Jev con `0.40` decide igual que una con `0.99`, y los
    tramos bajos son justo donde menos acierta (54,5 % en `0.5-0.7`). Diseño previsto: por debajo del
-   umbral, caer al LLM en vez de decidir; más exigente para `spam` (va a papelera) y más laxo para
-   las que acaban en `REVISAR IA` (las ve el usuario de todas formas).
+   umbral, caer al LLM en vez de decidir; más exigente para `spam` (va a papelera) y para
+   `facturas` (sale del inbox **leída**: un error queda igual de escondido), y más laxo para las que
+   acaban en `REVISAR IA` (las ve el usuario de todas formas). Casos reales de `facturas`: una
+   persona enviando su factura salió `facturas` con 0.86, y las altas de suscripción con 0.43–0.85
+   (ver la sección de arriba).
    Caso real que lo justifica: un email de estafa (`Re: getting back to this`) salió
    `jev=finanzas` con **confianza 0.88** mientras el LLM acertaba con `spam`. Un umbral global por
    encima de 0,85 lo habría dejado pasar: `finanzas` necesita el suyo, no solo `spam`.

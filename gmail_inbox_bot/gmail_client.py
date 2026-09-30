@@ -187,6 +187,11 @@ class GmailClient:
             self._load_labels()
         if name in self._label_cache:
             return self._label_cache[name]
+        # Gmail compara nombres sin distinguir mayúsculas: crear "Facturas" con "FACTURAS"
+        # ya existente da 409. Se reutiliza la existente.
+        for existing, label_id in self._label_cache.items():
+            if existing.casefold() == name.casefold():
+                return label_id
         # Create the label
         resp = self._request(
             "POST",

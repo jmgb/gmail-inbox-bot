@@ -8,7 +8,8 @@ conectadas y las deja en la carpeta de facturas del escritorio de Windows (WSL2)
 
 Solo lectura sobre Gmail (GET): no etiqueta, no archiva, no borra. Idempotente: un PDF ya
 descargado (no vacío) se salta salvo --force. Los emails con PDF que no parecen factura se
-anotan en revisar.csv en vez de descartarse en silencio.
+anotan en revisar.csv en vez de descartarse en silencio. Las facturas sin PDF (enlace a un
+portal) que el bot etiquetó `Facturas` se listan en facturas_sin_pdf.csv para bajarlas a mano.
 """
 
 from __future__ import annotations
@@ -101,6 +102,13 @@ def gmail_query(month: str) -> str:
     return f"has:attachment filename:pdf after:{start} before:{end}"
 
 
+def linked_invoices_query(month: str) -> str:
+    """Facturas por enlace a un portal: las etiqueta el bot (categoría `facturas`) y no traen
+    PDF. La etiqueta depende del clasificador; la query de PDFs no, y sigue siendo la base."""
+    start, end = month_bounds_epoch(month)
+    return f"label:Facturas -filename:pdf after:{start} before:{end}"
+
+
 def is_invoice_candidate(subject: str, filenames: list[str]) -> bool:
     haystack = " ".join([subject or "", *filenames]).lower()
     return any(keyword in haystack for keyword in KEYWORDS)
@@ -119,7 +127,7 @@ def pdf_filename(*, internal_date_iso: str, sender: str, message_id: str, origin
     return f"{day}_{safe_filename(domain)}_{message_id[:8]}_{safe_filename(original)}"
 
 
-def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
+def build_message(month, *, downloaded, skipped, review, errors, folder, linked=()) -> str:
     total = len(downloaded) + len(skipped)
     per_key: dict[str, int] = {}
     for entry in downloaded + skipped:
@@ -136,30 +144,45 @@ def build_message(month, *, downloaded, skipped, review, errors, folder) -> str:
         ]
     if review:
         lines.append(f"Emails con PDF sin pinta de factura, a revisar: {len(review)} (revisar.csv)")
+    if linked:
+        lines.append(
+            f"Facturas sin PDF (enlace a portal), a bajar a mano: {len(linked)} "
+            "(facturas_sin_pdf.csv)"
+        )
     lines.append(f"Carpeta: {folder}")
     return "\n".join(lines)
 
 
 # ---------- flujo por cuenta ----------
+def read_message(gmail, message_id: str) -> tuple[dict, object, str, str, str]:
+    """Descarga el email y devuelve (raw, parsed, subject, sender, date_iso)."""
+    raw = gmail.get_raw_message(message_id)
+    parsed = BytesParser(policy=policy.default).parsebytes(raw["raw_bytes"])
+    subject = str(parsed.get("Subject", ""))
+    sender = parseaddr(str(parsed.get("From", "")))[1]
+    stamp = int(raw.get("internalDate", "0")) // 1000
+    date_iso = dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc).isoformat()
+    return raw, parsed, subject, sender, date_iso
+
+
+def is_own_store(sender: str) -> bool:
+    return sender.rsplit("@", 1)[-1].lower() in OWN_STORE_DOMAINS
+
+
 def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool) -> dict:
     name = mailbox.get("name", mailbox["email"])
     out_dir = Path(dest)  # compartida entre cuentas: la cuenta va como columna en el índice
-    downloaded, skipped, review, own_store, errors = [], [], [], [], []
+    downloaded, skipped, review, own_store, linked, errors = [], [], [], [], [], []
     for stub in gmail.iter_message_stubs(query=gmail_query(month), page_size=500):
         message_id = stub["id"]
         try:
-            raw = gmail.get_raw_message(message_id)
-            parsed = BytesParser(policy=policy.default).parsebytes(raw["raw_bytes"])
-            subject = str(parsed.get("Subject", ""))
-            sender = parseaddr(str(parsed.get("From", "")))[1]
-            stamp = int(raw.get("internalDate", "0")) // 1000
-            date_iso = dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc).isoformat()
+            raw, parsed, subject, sender, date_iso = read_message(gmail, message_id)
             pdf_names = [
                 p.get_filename() or ""
                 for p in parsed.walk()
                 if p.get_content_type().lower() == "application/pdf"
             ]
-            if sender.rsplit("@", 1)[-1].lower() in OWN_STORE_DOMAINS:
+            if is_own_store(sender):
                 own_store.append({"mailbox": name, "sender": sender, "subject": subject})
                 continue
             tipo = classify_direction(
@@ -216,11 +239,36 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
                 {"mailbox": name, "message_id": message_id, "error": f"{type(exc).__name__}: {exc}"}
             )
             print(f"[{name}] {message_id}: {exc}", file=sys.stderr)
+    for stub in gmail.iter_message_stubs(query=linked_invoices_query(month), page_size=500):
+        message_id = stub["id"]
+        try:
+            raw, _, subject, sender, date_iso = read_message(gmail, message_id)
+            if is_own_store(sender):
+                continue
+            tipo = classify_direction(
+                sender=sender, labels=raw.get("labelIds") or [], me=mailbox["email"]
+            )
+            linked.append(
+                {
+                    "mailbox": name,
+                    "tipo": tipo,
+                    "date": date_iso[:10],
+                    "sender": sender,
+                    "subject": subject,
+                    "message_id": message_id,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 — un email malo no para la pasada
+            errors.append(
+                {"mailbox": name, "message_id": message_id, "error": f"{type(exc).__name__}: {exc}"}
+            )
+            print(f"[{name}] {message_id}: {exc}", file=sys.stderr)
     return {
         "downloaded": downloaded,
         "skipped": skipped,
         "review": review,
         "own_store": own_store,
+        "linked": linked,
         "errors": errors,
     }
 
@@ -232,6 +280,14 @@ def write_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter=";", extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_or_clear_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
+    """Informe opcional: sin filas se borra el de una pasada anterior para no dejarlo obsoleto."""
+    if rows:
+        write_csv(path, rows, fields)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def windows_path(path: Path) -> str:
@@ -272,15 +328,26 @@ def main() -> int:
             print("ningún mailbox coincide", file=sys.stderr)
             return 2
 
-    totals = {"downloaded": [], "skipped": [], "review": [], "own_store": [], "errors": []}
+    totals = {
+        "downloaded": [],
+        "skipped": [],
+        "review": [],
+        "own_store": [],
+        "linked": [],
+        "errors": [],
+    }
     for mailbox in boxes:
         gmail = _build_gmail_client(env, mailbox, request_rate_per_second=3.0, request_retries=5)
         try:
             if args.dry_run:
                 count = sum(1 for _ in gmail.iter_message_stubs(query=gmail_query(month)))
+                linked = sum(
+                    1 for _ in gmail.iter_message_stubs(query=linked_invoices_query(month))
+                )
                 print(
                     f"[{mailbox['name']}] {count} emails con PDF en {month} "
-                    f"(query: {gmail_query(month)})"
+                    f"(query: {gmail_query(month)}); {linked} facturas sin PDF "
+                    f"(query: {linked_invoices_query(month)})"
                 )
                 continue
             result = process_account(
@@ -298,10 +365,14 @@ def main() -> int:
         totals["downloaded"] + totals["skipped"],
         ["mailbox", "tipo", "date", "sender", "subject", "message_id", "file", "size", "sha256"],
     )
-    if totals["review"]:
-        write_csv(
-            dest / "revisar.csv", totals["review"], ["mailbox", "tipo", "date", "sender", "subject"]
-        )
+    write_or_clear_csv(
+        dest / "revisar.csv", totals["review"], ["mailbox", "tipo", "date", "sender", "subject"]
+    )
+    write_or_clear_csv(
+        dest / "facturas_sin_pdf.csv",
+        totals["linked"],
+        ["mailbox", "tipo", "date", "sender", "subject", "message_id"],
+    )
     message = build_message(
         month,
         downloaded=totals["downloaded"],
@@ -309,6 +380,7 @@ def main() -> int:
         review=totals["review"],
         errors=totals["errors"],
         folder=windows_path(dest),
+        linked=totals["linked"],
     )
     if totals["own_store"]:
         omitted = len(totals["own_store"])

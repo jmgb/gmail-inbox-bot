@@ -452,6 +452,13 @@ class TestLabels:
         client._label_cache = {"RESPONDIDO IA": "Label_42"}
         assert client._ensure_label("RESPONDIDO IA") == "Label_42"
 
+    def test_ensure_label_matches_existing_label_ignoring_case(self, client, mock_http):
+        # Gmail trata los nombres de label sin distinguir mayúsculas: crear "Facturas" cuando
+        # ya existe "FACTURAS" devuelve 409. Hay que reutilizar la existente.
+        client._label_cache = {"FACTURAS": "Label_7"}
+        assert client._ensure_label("Facturas") == "Label_7"
+        mock_http.request.assert_not_called()
+
 
 # ------------------------------------------------------------------
 # update_email

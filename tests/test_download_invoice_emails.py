@@ -11,11 +11,13 @@ from scripts.download_invoice_emails import (
     classify_direction,
     gmail_query,
     is_invoice_candidate,
+    linked_invoices_query,
     month_bounds_epoch,
     month_folder,
     pdf_filename,
     previous_month,
     process_account,
+    write_or_clear_csv,
 )
 
 MADRID = zoneinfo.ZoneInfo("Europe/Madrid")
@@ -49,6 +51,26 @@ def test_gmail_query_targets_pdf_attachments_in_month():
     q = gmail_query("2026-08")
     start, end = month_bounds_epoch("2026-08")
     assert q == f"has:attachment filename:pdf after:{start} before:{end}"
+
+
+def test_linked_invoices_query_targets_facturas_label_without_pdf():
+    # Las facturas por enlace a un portal no traen PDF: la etiqueta del bot las identifica.
+    q = linked_invoices_query("2026-08")
+    start, end = month_bounds_epoch("2026-08")
+    assert q == f"label:Facturas -filename:pdf after:{start} before:{end}"
+
+
+def test_build_message_reports_linked_invoices_to_download_by_hand():
+    msg = build_message(
+        "2026-08",
+        downloaded=[],
+        skipped=[],
+        review=[],
+        errors=[],
+        folder="C:\\x",
+        linked=[{"mailbox": "jesus82c"}, {"mailbox": "jesus82c"}],
+    )
+    assert "sin PDF" in msg and ": 2 (facturas_sin_pdf.csv)" in msg
 
 
 def test_is_invoice_candidate_matches_subject_or_filename_case_insensitive():
@@ -118,15 +140,19 @@ def _raw(subject: str, pdf_name: str | None, sender: str = "billing@hostinger.co
 
 
 class FakeGmail:
-    def __init__(self, messages: dict[str, tuple[bytes, list[str]]]):
+    """``messages`` responde a la query de PDFs; ``linked``, a la de la etiqueta Facturas."""
+
+    def __init__(self, messages: dict[str, tuple[bytes, list[str]]], linked=None):
         self._messages = messages
+        self._linked = linked or {}
 
     def iter_message_stubs(self, *, query, include_spam_trash=False, page_size=500):
-        for message_id in self._messages:
+        source = self._linked if query.startswith("label:Facturas") else self._messages
+        for message_id in source:
             yield {"id": message_id}
 
     def get_raw_message(self, message_id: str) -> dict:
-        raw_bytes, labels = self._messages[message_id]
+        raw_bytes, labels = {**self._messages, **self._linked}[message_id]
         return {
             "id": message_id,
             "internalDate": "1786700000000",  # 2026-08-14 UTC aprox
@@ -174,3 +200,40 @@ def test_process_account_splits_gastos_ingresos_and_reports_review(tmp_path: Pat
         gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
     )
     assert len(again["skipped"]) == 2 and not again["downloaded"]
+
+
+def test_process_account_lists_facturas_label_without_pdf(tmp_path: Path):
+    gmail = FakeGmail(
+        {},
+        linked={
+            "eeee5555": (
+                _raw(
+                    "Factura disponible en el área de cliente",
+                    None,
+                    sender="support@services.ovhcloud.com",
+                ),
+                ["Label_7"],
+            ),
+            "ffff6666": (
+                _raw("Tu factura", None, sender="doctor@drcorno.com"),
+                ["Label_7"],
+            ),
+        },
+    )
+    mailbox = {"name": "jesus82c", "email": "jesus82c@gmail.com"}
+    result = process_account(
+        gmail=gmail, mailbox=mailbox, month="2026-08", dest=tmp_path, force=False
+    )
+    # solo se listan (descargarlas sería scraping del portal); las tiendas propias, omitidas
+    assert [e["sender"] for e in result["linked"]] == ["support@services.ovhcloud.com"]
+    assert result["linked"][0]["tipo"] == "gastos" and not result["downloaded"]
+    assert not list(tmp_path.rglob("*.pdf"))
+
+
+def test_write_or_clear_csv_removes_stale_report_when_rerun_is_empty(tmp_path: Path):
+    # Repetir un mes sin entradas no debe dejar la lista de la pasada anterior.
+    path = tmp_path / "facturas_sin_pdf.csv"
+    write_or_clear_csv(path, [{"subject": "vieja"}], ["subject"])
+    assert "vieja" in path.read_text(encoding="utf-8-sig")
+    write_or_clear_csv(path, [], ["subject"])
+    assert not path.exists()

@@ -39,6 +39,8 @@ finanzas:
     - "Hosting: 'Aviso de factura próxima a vencer'"
     - "App de contabilidad o gestoría: 'Solicitud de factura faltante'"
     - "Un proveedor escribe 'Facturas mantenimiento' con los PDF para revisar y pagar"
+    - "alfonso@azalea211.com: 'Servicio IA -factura' (una persona envía su factura)"
+    - "Stripe: 'Pago de 900,00 € de <cliente> para Presupuestor' (cobro de un cliente)"
 
 facturas:
   what: >
@@ -51,9 +53,13 @@ facturas:
     Facturas que piden una acción: por vencer o pendientes de pago, cobros fallidos,
     facturas que faltan, o facturas de un proveedor o cliente para revisar o pagar a mano
     (eso es finanzas). Movimientos bancarios, operaciones de broker e impuestos (eso es
-    finanzas). Confirmaciones de pedido o de envío sin factura (eso es compras). Avisos de
-    cambios en la facturación de un producto o publicidad que menciona la factura
-    (newsletters o spam).
+    finanzas). Una persona (no un sistema de facturación) que escribe enviando su factura,
+    aunque el asunto diga "factura" (eso es finanzas). Cobros recibidos de clientes, como el
+    aviso de Stripe "Pago de X € de <cliente> para <negocio>" (eso es finanzas). Altas o
+    bienvenidas de suscripción sin importe cobrado ("Welcome to the Max plan", "Tu
+    suscripción está activa · plan Pro") (eso es notificaciones). Confirmaciones de pedido o
+    de envío sin factura (eso es compras). Avisos de cambios en la facturación de un
+    producto o publicidad que menciona la factura (newsletters o spam).
   examples:
     - "invoice+statements@mail.anthropic.com: 'Your receipt from Anthropic, PBC #2431-9605-7329'"
     - "Cloudflare: 'Your invoice is attached' con el PDF de la suscripción"

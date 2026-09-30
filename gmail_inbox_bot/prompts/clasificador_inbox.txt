@@ -80,6 +80,9 @@ Estas reglas refinan la clasificación basándose en patrones reales observados.
 - "Your receipt from …", "Your invoice is attached", "Aviso de factura emitida", "Tu factura ya está lista" de un cobro automático o un pedido ya hecho → `facturas`.
 - "Factura próxima a vencer", "Solicitud de factura faltante", pago fallido o una persona que envía facturas para revisar/pagar → `finanzas`.
 - Anuncios de cambios en la facturación de un producto → `newsletters` o `notificaciones`, no `facturas`.
+- Una persona que escribe enviando su factura (ej. alfonso@azalea211.com "Servicio IA -factura") → `finanzas`, aunque el asunto diga factura.
+- Cobro recibido de un cliente (Stripe "Pago de X € de <cliente> para <negocio>") → `finanzas`.
+- Alta o bienvenida de suscripción sin importe ("Welcome to the Max plan", "Tu suscripción está activa · plan Pro") → `notificaciones`.
 
 ## Emails con body vacío o solo firma legal
 - Si el remitente es reconocible (banco, empresa conocida), clasificar por el remitente.

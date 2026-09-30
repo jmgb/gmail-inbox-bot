@@ -212,7 +212,14 @@ propósito). Diseño:
 
 - **VPS**: `158.69.215.223` (usuario `ubuntu`)
 - **Ruta en VPS**: `/home/ubuntu/services/gmail-inbox-bot`
-- **Deploy automático**: push a `main` → GitHub Action (`deploy-vps.yml`) → `git pull` + `docker compose up -d --build`
+- **Deploy automático**: push a `main` (salvo commits solo de `tests/`, `docs/` o `*.md`) → GitHub
+  Action (`deploy-vps.yml`): tests → build de la imagen en GHCR → en el VPS, `git pull --ff-only` +
+  `scripts/vps_deploy.sh`, que descarga la imagen por digest y hace `up -d --no-build`. Si la
+  descarga falla, el script vuelve a construir en el VPS
+- **Deploy a mano** (sin minutos de GitHub Actions, o para desplegar ya): tras el push,
+  `ssh ubuntu@158.69.215.223 'cd /home/ubuntu/services/gmail-inbox-bot && git pull origin main --ff-only && ./scripts/vps_deploy.sh'`.
+  Sin `DEPLOY_IMAGE_REF`, el script construye la imagen en el VPS (`up -d --build`) y espera al
+  healthcheck. Usado el 2026-09-30
 - **Puerto**: `8007` (mapeado a `8000` interno)
 - **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
 - **Log Viewer**: https://email.pymechat.com/admin/logs
