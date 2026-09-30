@@ -24,6 +24,7 @@ import yaml
 from typesafe_sdk import Choice, RetryPolicy, TypeSafeClient
 
 from .email_format import format_email_for_classifier
+from .jev_model_monitor import observe_jev_model
 from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.jev_classifier", "logs/app.log")
@@ -102,6 +103,7 @@ class JevClassifier:
             )
             response = self.client.system_one(state, {"categoria": self.question})
             answer = response.choices["categoria"]
+            observe_jev_model(getattr(response, "model", None))
             return {
                 "jev_category": answer.choice,
                 "jev_confidence": float(answer.confidence),
@@ -173,6 +175,7 @@ def build_jev_classifier(
     question = Choice(instructions=JEV_INSTRUCTIONS, criteria=criteria)
     client = TypeSafeClient(
         api_key=api_key,
+        model="jev-latest",
         timeout=JEV_TIMEOUT_SECONDS,
         retry=RetryPolicy(max_retries=JEV_MAX_RETRIES),
     )

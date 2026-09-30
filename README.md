@@ -179,6 +179,9 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   dos puntos anteriores (Groq y su fallback a OpenAI) pasan a ser el **fallback de segundo nivel**:
   solo se llama al LLM si Jev devuelve error. Sin `JEV_API_KEY` clasifica el LLM, como antes del
   corte — es el camino de vuelta, sin tocar código.
+  El cliente usa explícitamente `jev-latest` para recibir las nuevas versiones estables automáticamente.
+  Al cambiar la versión real, avisa una vez por Telegram. El estado persiste en
+  `logs/jev_model_version.txt`; la primera observación es silenciosa y el aviso se envía en segundo plano.
   La confianza se guarda pero **no filtra**: 0.40 decide igual que 0.99 (umbral por categoría
   pendiente, ver `TASKS.md`). Criterios en `gmail_inbox_bot/prompts/clasificador_jev.yml`; la
   comparativa histórica sigue en `/admin/dashboard` → "Jev vs LLM", donde ya no crece porque las

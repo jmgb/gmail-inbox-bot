@@ -89,6 +89,7 @@ class TestBuildJevClassifier:
         assert build_jev_classifier({"JEV_API_KEY": ""}, CRITERIA_PATH) is None
 
     def test_real_sdk_bounds_request_body_timeout_and_retries(self, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-1.13.0")
         attempts = []
 
         def respond(request):
@@ -120,6 +121,7 @@ class TestBuildJevClassifier:
                 "pool": 4.0,
             }
             payload = json.loads(request.content)
+            assert payload["model"] == "jev-latest"
             assert payload["state"].split("Contenido del email:\n", 1)[1] == "z" * 6000
         assert result["jev_error"].startswith("TypeSafeAPITimeoutError:")
         assert "jev_category" not in result
@@ -130,7 +132,9 @@ class TestClassify:
         question = Choice(instructions="q", criteria={"spam": "x", "otros": "y"})
         return JevClassifier(client=client, question=question)
 
-    def test_maps_response_to_dict(self):
+    def test_maps_response_to_dict(self, monkeypatch):
+        observed = []
+        monkeypatch.setattr(jev_classifier, "observe_jev_model", observed.append)
         client = MagicMock()
         client.system_one.return_value = _fake_response()
         result = self._shadow(client).classify(
@@ -144,6 +148,7 @@ class TestClassify:
         assert result["jev_confidence"] == 0.93
         assert result["jev_probabilities"] == {"spam": 0.93, "otros": 0.07}
         assert result["jev_model"] == "jev-1.13.0"
+        assert observed == ["jev-1.13.0"]
         assert isinstance(result["jev_latency_ms"], int)
         assert "jev_error" not in result
 

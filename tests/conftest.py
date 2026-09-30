@@ -99,3 +99,11 @@ def graph():
 # Los tests simulan avisos de Telegram: nunca deben acabar en el JSONL de
 # triage del host (gmail_inbox_bot/telegram_activity.py cae a ~/ai_projects/... sin env).
 os.environ["TELEGRAM_ACTIVITY_LOG"] = os.devnull
+
+
+@pytest.fixture(autouse=True)
+def disable_jev_version_notifications(monkeypatch):
+    """Unit tests never persist runtime versions or send real Telegram messages."""
+    from gmail_inbox_bot import jev_classifier
+
+    monkeypatch.setattr(jev_classifier, "observe_jev_model", lambda _model: None)

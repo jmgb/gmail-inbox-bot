@@ -160,6 +160,14 @@ El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) ti
 el routing actúa sobre ella; la cadena LLM (`gpt-oss-120b` → `gpt-6-luna`) queda como **fallback y
 solo entra si Jev devuelve error**. Del 21 al 27 de septiembre corrió en sombra sin decidir nada.
 
+- **Modelo `jev-latest`, explícito** (decisión del usuario, 2026-09-30): las nuevas versiones
+  estables se adoptan automáticamente. No fijar una versión concreta ni heredar el modelo del
+  entorno; las métricas conservan la versión real que respondió.
+- **Aviso de versión**: `jev_model_monitor.py` observa `response.model` en segundo plano y
+  notifica una vez por cambio. El estado en `logs/jev_model_version.txt` sobrevive al despliegue;
+  la primera versión solo establece la referencia. Un bloqueo de archivo evita duplicados entre
+  procesos. El aviso usa el transporte Telegram existente (con reintentos); un fallo del monitor
+  se registra como warning y nunca cambia la clasificación.
 - **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_classifier()`
   devuelve `None` y clasifica el LLM como antes.
 - **La confianza se registra pero no filtra**: una clasificación de Jev con `0.40` decide igual que
