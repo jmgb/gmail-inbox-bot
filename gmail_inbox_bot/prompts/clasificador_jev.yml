@@ -1,7 +1,8 @@
-# Criterios de clasificación para Jev (TypeSafe.ai) — modo sombra.
-# Una entrada por categoría, mismas claves que `routing` en config/*.yml.
+# Criterios de clasificación de Jev (TypeSafe.ai), el clasificador principal desde el 2026-09-27.
+# Una entrada por categoría, mismas claves que `routing` en config/*.yml (un test lo comprueba).
 # Cada categoría: what (qué abarca), not_for (qué excluye), examples (casos reales).
-# Mientras dure la sombra, cada regla nueva del prompt LLM se replica aquí.
+# Jev decide la categoría, así que cada regla nueva se escribe aquí primero. El prompt LLM
+# (clasificador_inbox.txt) solo gobierna el fallback cuando Jev falla: mantenerlo alineado.
 
 personal:
   what: >
@@ -21,26 +22,54 @@ personal:
 
 finanzas:
   what: >
-    Emails de bancos, brokers, pasarelas de pago, facturas, recibos, movimientos de cuenta,
-    transferencias, impuestos y seguros. Cualquier contenido relacionado con dinero que
-    requiera verificación o acción. El remitente bancario o de broker es señal suficiente
+    Emails de bancos, brokers, pasarelas de pago, movimientos de cuenta, transferencias,
+    impuestos y seguros. Cualquier contenido relacionado con dinero que requiera verificación
+    o acción, incluidas las facturas que piden algo: por vencer o pendientes de pago, cobros
+    fallidos o rechazados, facturas que faltan, o facturas de un proveedor o cliente que hay
+    que revisar, aprobar o pagar a mano. El remitente bancario o de broker es señal suficiente
     aunque el cuerpo esté vacío o solo tenga firma legal.
   not_for: >
     Publicidad de productos financieros (eso es spam); confirmaciones de compra en tiendas
-    online (eso es compras).
+    online (eso es compras); facturas y recibos de cobros ya hechos o domiciliados que no
+    piden nada (eso es facturas).
   examples:
     - "Remitente bbva.es o santander con asunto 'Movimiento en tu cuenta' y cuerpo vacío"
     - "interactivebrokers.com o degiro: notificación de operación ejecutada"
-    - "Factura mensual de un proveedor con PDF adjunto"
     - "Agencia Tributaria: notificación de liquidación"
+    - "Hosting: 'Aviso de factura próxima a vencer'"
+    - "App de contabilidad o gestoría: 'Solicitud de factura faltante'"
+    - "Un proveedor escribe 'Facturas mantenimiento' con los PDF para revisar y pagar"
+
+facturas:
+  what: >
+    Facturas, recibos y justificantes de cobros que ya se han hecho o se cargan solos
+    (domiciliación, tarjeta guardada, suscripción): SaaS, APIs, hosting, cloud, telefonía,
+    suministros, plataformas de pago como Stripe o Paddle, y la factura de un pedido ya
+    hecho en una tienda. Son un comprobante para archivar y no piden nada al usuario. Da
+    igual que la factura venga en PDF adjunto o como enlace al área de cliente.
+  not_for: >
+    Facturas que piden una acción: por vencer o pendientes de pago, cobros fallidos,
+    facturas que faltan, o facturas de un proveedor o cliente para revisar o pagar a mano
+    (eso es finanzas). Movimientos bancarios, operaciones de broker e impuestos (eso es
+    finanzas). Confirmaciones de pedido o de envío sin factura (eso es compras). Avisos de
+    cambios en la facturación de un producto o publicidad que menciona la factura
+    (newsletters o spam).
+  examples:
+    - "invoice+statements@mail.anthropic.com: 'Your receipt from Anthropic, PBC #2431-9605-7329'"
+    - "Cloudflare: 'Your invoice is attached' con el PDF de la suscripción"
+    - "Google Cloud Platform & APIs: 'Your invoice is available' de un cobro automático"
+    - "DIGI: 'Aviso de factura emitida' de la línea móvil domiciliada"
+    - "Groq o Paddle: 'Your Invoice from Groq LLC' o 'Recibo de la transacción'"
+    - "Backmarket o Decathlon: 'Tu factura ya está lista' de un pedido ya hecho"
 
 compras:
   what: >
-    Confirmaciones de pedido, seguimiento de envío, recibos de compra, devoluciones y
-    notificaciones de e-commerce (Amazon, tiendas online, marketplaces).
+    Confirmaciones de pedido, seguimiento de envío, devoluciones y notificaciones de
+    e-commerce (Amazon, tiendas online, marketplaces).
   not_for: >
     Publicidad, ofertas o catálogos de una tienda (eso es spam); recibos bancarios o de
-    tarjeta (eso es finanzas).
+    tarjeta (eso es finanzas); el email cuyo contenido es la factura o el recibo de un
+    pedido ya hecho (eso es facturas).
   examples:
     - "Amazon: 'Tu pedido ha sido enviado' con número de seguimiento"
     - "Tienda online: confirmación de devolución aceptada"

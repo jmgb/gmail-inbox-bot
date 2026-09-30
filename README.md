@@ -20,7 +20,7 @@ verdad** (no hay base de datos de correos): el bot lee y escribe sobre el mismo 
 - [Categorías y enrutado del inbox](#categorías-y-enrutado-del-inbox)
 - [Pre-filtros](#pre-filtros)
 - [Acciones disponibles](#acciones-disponibles)
-- [Clasificador (LLM)](#clasificador-llm)
+- [Clasificador (Jev + LLM de reserva)](#clasificador-jev--llm-de-reserva)
 - [Plantillas de respuesta y firma](#plantillas-de-respuesta-y-firma)
 - [Recordatorios de Google Calendar](#recordatorios-de-google-calendar)
 - [Idempotencia y prevención de bucles](#idempotencia-y-prevención-de-bucles)
@@ -101,6 +101,7 @@ bot; el resto se mueve fuera del inbox a su carpeta (label).
 | `finanzas` | tag `REVISAR IA` | Sí | Sí | Verificación/acción financiera |
 | `otros` | tag `REVISAR IA` | Sí | Sí | Fallback seguro — revisión manual |
 | `compras` | carpeta `Compras` | No | No | Informativo |
+| `facturas` | carpeta `Facturas` | No | No | Factura/recibo de un cobro ya hecho; las que piden acción van a `finanzas` |
 | `notificaciones` | carpeta `Notificaciones` | No | No | Alertas de apps |
 | `automatico` | carpeta `Automatico` | No | No | Out-of-office, noreply |
 | `newsletters` | carpeta `Newsletters` | No | **Sí** | Se conserva sin leer para lectura eventual |
@@ -155,7 +156,12 @@ borrador, nunca en emails enviados).
 
 ---
 
-## Clasificador (LLM)
+## Clasificador (Jev + LLM de reserva)
+
+**Jev (TypeSafe.ai) es el clasificador principal desde el 2026-09-27**: decide la categoría con los
+criterios de `gmail_inbox_bot/prompts/clasificador_jev.yml` (detalle en el punto "Jev decide" más
+abajo). Lo que sigue describe la cadena LLM, que solo clasifica si Jev devuelve error o si
+`JEV_API_KEY` está vacía.
 
 `classifier.py` usa `neutral-llm-gateway==0.18.0` con salida `json_object`. El bot conserva su API
 síncrona mediante `llm_gateway_client.py`; por debajo, el gateway usa los adapters async oficiales
@@ -194,10 +200,13 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   modelos, proveedores y tarifas proceden del catálogo versionado del gateway.
 - **Override por cuenta**: `classifier.model` en el YAML.
 
-El prompt tiene dos bloques: **reglas generales** (definiciones de categoría) y **reglas aprendidas de
-producción** (refinamientos por dominio/remitente a partir de errores reales). Para mejorar la
-clasificación se añaden reglas concretas a este último bloque (preferir reglas por remitente/dominio
-sobre contenido del body).
+Como Jev es quien decide, **las reglas nuevas se escriben primero en
+`gmail_inbox_bot/prompts/clasificador_jev.yml`** (`what` / `not_for` / `examples` por categoría) y
+después su equivalente en el prompt LLM, que solo gobierna el fallback. El prompt tiene dos bloques:
+**reglas generales** (definiciones de categoría) y **reglas aprendidas de producción**
+(refinamientos por dominio/remitente a partir de errores reales). Preferir reglas por
+remitente/dominio sobre contenido del body. Una categoría nueva se añade en los tres sitios (YAML de
+Jev, `routing` de cada `config/*.yml` y prompt LLM); los tests de paridad fallan si falta alguno.
 
 ---
 

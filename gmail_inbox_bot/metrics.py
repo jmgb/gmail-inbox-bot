@@ -87,7 +87,7 @@ def record_email(
         output_cost_usd       Coste USD de tokens de salida
         total_cost_usd        Coste USD total del procesamiento LLM
         llm_provider          Proveedor del modelo
-        jev_category          Categoría elegida por Jev (clasificación sombra)
+        jev_category          Categoría elegida por Jev (la que decide desde el 2026-09-27)
         jev_confidence        Confianza 0-1 de Jev
         jev_probabilities     Distribución de probabilidad por categoría (JSONB)
         jev_latency_ms        Latencia de la llamada a Jev

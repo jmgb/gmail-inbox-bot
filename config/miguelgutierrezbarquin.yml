@@ -69,6 +69,10 @@ routing:
     action: move
     folder: Compras
 
+  facturas:
+    action: move
+    folder: Facturas
+
   newsletters:
     action: move
     folder: Newsletters

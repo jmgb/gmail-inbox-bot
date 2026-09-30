@@ -1,6 +1,7 @@
-"""Tests for jev_classifier — clasificación sombra con Jev (TypeSafe.ai)."""
+"""Tests for jev_classifier — clasificación con Jev (TypeSafe.ai), el clasificador principal."""
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -22,6 +23,7 @@ from gmail_inbox_bot.metrics import record_email
 
 CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
 CONFIG_DIR = Path("config")
+LLM_PROMPT_PATH = Path("gmail_inbox_bot/prompts/clasificador_inbox.txt")
 
 
 class TestCriteriaFile:
@@ -39,6 +41,23 @@ class TestCriteriaFile:
         for yml in sorted(CONFIG_DIR.glob("*.yml")):
             config = yaml.safe_load(yml.read_text(encoding="utf-8"))
             assert set(criteria) == set(config["routing"]), yml.name
+
+    def test_llm_fallback_prompt_lists_every_routing_category(self):
+        # Jev decide, pero si falla clasifica el LLM: su prompt debe conocer las mismas
+        # categorías o nunca elegirá una nueva y la mandará a otra carpeta.
+        prompt = LLM_PROMPT_PATH.read_text(encoding="utf-8")
+        headings = set(re.findall(r"^### (\w+)$", prompt, flags=re.MULTILINE))
+        for yml in sorted(CONFIG_DIR.glob("*.yml")):
+            config = yaml.safe_load(yml.read_text(encoding="utf-8"))
+            assert headings == set(config["routing"]), yml.name
+
+    def test_facturas_move_out_of_inbox_read(self):
+        # Facturas y recibos de cobros ya hechos: comprobante para archivar, no piden nada.
+        # Sin `is_read`, `_handle_move` las deja leídas (como `compras`).
+        for yml in sorted(CONFIG_DIR.glob("*.yml")):
+            config = yaml.safe_load(yml.read_text(encoding="utf-8"))
+            rule = config["routing"]["facturas"]
+            assert rule == {"action": "move", "folder": "Facturas"}, yml.name
 
 
 def _fake_response(choice="spam", confidence=0.93, probabilities=None, model="jev-1.13.0"):

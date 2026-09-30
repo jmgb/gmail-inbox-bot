@@ -18,12 +18,18 @@ No aplica si es una notificación automática aunque el remitente sea conocido.
 No aplica si es un newsletter o boletín.
 
 ### finanzas
-Emails de bancos, pagos, facturas, recibos, movimientos de cuenta, transferencias, impuestos, seguros. Cualquier contenido relacionado con dinero que requiera verificación o acción.
+Emails de bancos, pagos, movimientos de cuenta, transferencias, impuestos, seguros. Cualquier contenido relacionado con dinero que requiera verificación o acción, incluidas las facturas que piden algo: por vencer, impagadas, cobros fallidos, facturas que faltan, o facturas de un proveedor para revisar o pagar a mano.
 No aplica si es publicidad de productos financieros (eso es spam).
+No aplica si es la factura o el recibo de un cobro ya hecho que no pide nada (eso es facturas).
+
+### facturas
+Facturas, recibos y justificantes de cobros ya hechos o domiciliados (suscripciones SaaS, APIs, hosting, cloud, telefonía, Stripe, Paddle) y la factura de un pedido ya hecho en una tienda. Son un comprobante para archivar y no piden ninguna acción, venga la factura en PDF adjunto o como enlace.
+No aplica si la factura requiere una acción (eso es finanzas).
 
 ### compras
-Confirmaciones de pedido, seguimiento de envío, recibos de compra, devoluciones. Notificaciones de e-commerce (Amazon, tiendas online, etc.).
+Confirmaciones de pedido, seguimiento de envío, devoluciones. Notificaciones de e-commerce (Amazon, tiendas online, etc.).
 No aplica si es publicidad o catálogo de una tienda (eso es spam).
+No aplica si el email es la factura o el recibo del pedido (eso es facturas).
 
 ### newsletters
 Newsletters, boletines, digests, resúmenes periódicos a los que el usuario está suscrito voluntariamente. Contenido editorial o informativo recurrente.
@@ -69,6 +75,11 @@ Estas reglas refinan la clasificación basándose en patrones reales observados.
 ## Newsletters vs spam — señales clave
 - Si tiene link de "unsubscribe" + el usuario probablemente se suscribió (producto que usa, servicio contratado) → `newsletters`.
 - Si tiene link de "unsubscribe" + es marketing no solicitado o de empresa desconocida → `spam`.
+
+## Facturas: archivar vs actuar
+- "Your receipt from …", "Your invoice is attached", "Aviso de factura emitida", "Tu factura ya está lista" de un cobro automático o un pedido ya hecho → `facturas`.
+- "Factura próxima a vencer", "Solicitud de factura faltante", pago fallido o una persona que envía facturas para revisar/pagar → `finanzas`.
+- Anuncios de cambios en la facturación de un producto → `newsletters` o `notificaciones`, no `facturas`.
 
 ## Emails con body vacío o solo firma legal
 - Si el remitente es reconocible (banco, empresa conocida), clasificar por el remitente.

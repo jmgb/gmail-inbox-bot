@@ -282,7 +282,7 @@ async def api_jev_shadow(
     date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
     mailbox: str | None = Query(None, description="Filter by mailbox name"),
 ) -> dict:
-    """Comparativa Jev (sombra) vs clasificador LLM."""
+    """Comparativa histórica Jev vs clasificador LLM (de la fase sombra, hasta el 2026-09-27)."""
     if not _is_authenticated(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
 

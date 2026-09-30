@@ -70,12 +70,21 @@ del inbox.
 | `finanzas` | tag `REVISAR IA` | **Sí** | **Sí** | Verificación o acción financiera |
 | `otros` | tag `REVISAR IA` | **Sí** | **Sí** | Fallback seguro — revisión manual |
 | `compras` | carpeta `Compras` | No | No | Informativo, no requiere acción |
+| `facturas` | carpeta `Facturas` | No | No | Factura/recibo de un cobro ya hecho: comprobante para archivar |
 | `notificaciones` | carpeta `Notificaciones` | No | No | Alertas de apps, no urgente |
 | `automatico` | carpeta `Automatico` | No | No | Out-of-office, noreply, sin acción |
 | `spam` | papelera | No | — | Basura |
 | `newsletters` | carpeta `Newsletters` | No | **Sí** | No requiere acción inmediata pero se conserva sin leer para lectura eventual |
 | error clasificador | tag `ERROR IA` | **Sí** | **Sí** | Fallo técnico pre-clasificación — revisar manualmente |
 | error config/acción | tag `PENDIENTE GESTIONAR` | **Sí** | **Sí** | Fallo post-clasificación (sin template, sin routing, acción desconocida) |
+
+**Facturas**: facturas y recibos de cobros ya hechos o domiciliados (Anthropic, Cloudflare, GCP,
+DIGI, la factura de un pedido…). Salen del inbox porque no piden nada. Las que sí piden acción (por
+vencer, cobro fallido, factura que falta, proveedor que envía facturas para pagar a mano) siguen en
+`finanzas` con `REVISAR IA`. Se marcan **leídas** (decisión del usuario, 2026-09-30): son un
+comprobante, no algo pendiente. La etiqueta la crea el bot la primera vez que mueve un email. La
+etiqueta no sustituye al cron mensual `scripts/download_invoice_emails.py`, que busca por palabras
+clave a propósito para no depender de que el clasificador acierte.
 
 **Newsletters**: se mueven fuera del inbox pero se mantienen sin leer (`is_read: false`). No son
 urgentes ni requieren acción, pero el usuario quiere poder revisarlas a su ritmo. El estado unread
@@ -138,15 +147,25 @@ sin mención a IA ni a aiship.co). No re-añadir el footer a esos emails. Ver `c
 
 ### Clasificación — mejora continua
 
-El prompt del clasificador (`gmail_inbox_bot/prompts/clasificador_inbox.txt`) tiene dos bloques:
+**Jev es el clasificador principal** (ver más abajo), así que las reglas viven en dos sitios, por
+este orden:
 
-1. **Reglas generales** — definiciones de categoría y criterios base. Rara vez cambian.
-2. **Reglas aprendidas de producción** — refinamientos basados en errores reales observados en logs.
+1. **`gmail_inbox_bot/prompts/clasificador_jev.yml`** — lo que decide. Una entrada por categoría con
+   `what` / `not_for` / `examples`. Aquí se escribe primero cada regla nueva.
+2. **`gmail_inbox_bot/prompts/clasificador_inbox.txt`** — prompt del LLM, que solo clasifica si Jev
+   falla. Tiene **reglas generales** (definiciones de categoría) y **reglas aprendidas de
+   producción**. Se mantiene alineado con el YAML para que el fallback no clasifique distinto.
+
+**Añadir una categoría** toca: el YAML de Jev, `routing` de **todos** los `config/*.yml` y un
+`### <categoria>` en el prompt LLM. Dos tests de `tests/test_jev_classifier.py` fallan si alguno de
+los tres se queda sin actualizar.
 
 **Workflow para mejorar la clasificación:**
-1. Revisar logs del VPS: `docker logs gmail-inbox-bot --tail 100` o `cat logs/app.log`
+1. Revisar logs del VPS: `docker logs gmail-inbox-bot --tail 100` o `cat logs/app.log`, o el
+   dashboard (`/admin/dashboard`)
 2. Identificar clasificaciones incorrectas (ej. banco → `otros` en vez de `finanzas`)
-3. Añadir regla específica en la sección "Reglas aprendidas de producción" del prompt
+3. Añadir la regla en `clasificador_jev.yml` (`not_for` / `examples` de las categorías implicadas)
+   y su equivalente en "Reglas aprendidas de producción" del prompt LLM
 4. Deploy (push a main → autodeploy)
 
 **Principios:**

@@ -36,7 +36,8 @@ ALTER TABLE email_metrics
     ADD COLUMN IF NOT EXISTS total_cost_usd  DOUBLE PRECISION,
     ADD COLUMN IF NOT EXISTS llm_provider    TEXT;
 
--- Migración idempotente: clasificación sombra con Jev (TypeSafe.ai).
+-- Migración idempotente: columnas de Jev (TypeSafe.ai). Nacieron en la fase sombra; desde el
+-- 2026-09-27 Jev es el clasificador principal y en sus filas category == jev_category.
 -- Ejecutar ANTES de desplegar el código que las escribe; si no, PostgREST devuelve 400
 -- y se pierde la fila entera de métricas de ese email.
 ALTER TABLE email_metrics
