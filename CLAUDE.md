@@ -223,7 +223,7 @@ propósito). Diseño:
 - **Deploy a mano** (sin minutos de GitHub Actions, o para desplegar ya): tras el push,
   `ssh ubuntu@158.69.215.223 'cd /home/ubuntu/services/gmail-inbox-bot && git pull origin main --ff-only && ./scripts/vps_deploy.sh'`.
   Sin `DEPLOY_IMAGE_REF`, el script construye la imagen en el VPS (`up -d --build`) y espera al
-  healthcheck. Si falla, el rollback vuelve al último commit sano (`logs/.last_deployed_sha`, lo
+  healthcheck. Si falla, el rollback vuelve al último commit sano (`.last_deployed_sha`, lo
   escribe cada deploy correcto). Usado el 2026-09-30
 - **Puerto**: `8007` (mapeado a `8000` interno)
 - **Admin Dashboard**: https://email.pymechat.com/admin/dashboard

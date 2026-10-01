@@ -37,3 +37,6 @@ Thumbs.db
 
 # Symlink a doc personal fuera del repo
 SUPABASE_ACCOUNTS.md
+
+# Último commit desplegado sano (lo escribe scripts/vps_deploy.sh en el VPS)
+.last_deployed_sha

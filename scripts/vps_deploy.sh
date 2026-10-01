@@ -35,7 +35,9 @@ DEPLOY_ALLOW_FALLBACK="${DEPLOY_ALLOW_FALLBACK:-true}"
 # imagen dejaría la config nueva con el código viejo.
 # Sin variable (deploy a mano, que hace el git pull antes), se usa el último commit que quedó
 # sano, guardado al final de cada deploy correcto.
-LAST_DEPLOYED_FILE="$PROJECT_DIR/logs/.last_deployed_sha"
+# Fuera de logs/: ese directorio es de root (lo escribe el contenedor) y el deploy corre
+# como ubuntu.
+LAST_DEPLOYED_FILE="$PROJECT_DIR/.last_deployed_sha"
 DEPLOY_PREVIOUS_SHA="${DEPLOY_PREVIOUS_SHA:-$(cat "$LAST_DEPLOYED_FILE" 2>/dev/null || true)}"
 
 print_header() { echo "==> $1"; }

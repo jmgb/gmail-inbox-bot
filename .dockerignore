@@ -16,3 +16,4 @@ attachments_dump/
 .pytest_cache/
 .ruff_cache/
 tests/
+.last_deployed_sha
