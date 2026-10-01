@@ -76,3 +76,21 @@ def test_los_loggers_del_mismo_fichero_comparten_un_unico_handler(tmp_path, monk
     handlers_dos = [h for h in dos.handlers if isinstance(h, RotatingFileHandler)]
     assert len(handlers_uno) == 1
     assert handlers_uno[0] is handlers_dos[0]
+
+
+def test_un_handler_previo_no_impide_configurar_consola_y_fichero(tmp_path, monkeypatch):
+    """El arranque engancha el TelegramHandler antes de importar bot.py: setup_logger veía
+    "ya tiene handlers" y salía sin fichero ni consola. Desde el 2026-09-30 no se registraba
+    ni una línea INFO del bot, las acciones, el cliente Gmail ni el clasificador."""
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    nombre = "test_logger.handler_previo"
+    logging.getLogger(nombre).addHandler(logging.NullHandler())
+    log_file = tmp_path / "app.log"
+
+    logger = setup_logger(nombre, str(log_file))
+    logger.info("Polling mailbox: x")
+    for handler in logger.handlers:
+        handler.flush()
+
+    assert "Polling mailbox" in log_file.read_text(encoding="utf-8")
+    assert logger.propagate is False

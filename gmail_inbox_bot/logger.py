@@ -100,7 +100,10 @@ def setup_logger(
 ) -> logging.Logger:
     """Configura un logger con rotación de fichero y salida a consola."""
     logger = logging.getLogger(name)
-    if logger.handlers:
+    # Idempotente por *su* fichero, no por "tiene algún handler": setup_telegram_logging()
+    # engancha el TelegramHandler antes de que el thread importe bot.py, y con el chequeo
+    # anterior esos loggers se quedaban sin consola ni fichero (todo el INFO se perdía).
+    if any(_handler_targets_path(handler, log_file) for handler in logger.handlers):
         return logger
 
     # Nivel global: lo manda LOG_LEVEL (INFO por defecto); debug_mode lo fuerza a DEBUG.
