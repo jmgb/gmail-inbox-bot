@@ -521,3 +521,40 @@ class TestProcessEmailGaps:
         _process_email(mock_gmail, None, config, _make_email())
 
         assert mock_record.call_args.kwargs["received_at"] == "2026-03-12T10:00:00Z"
+
+
+class TestHeartbeat:
+    def _run_once(self, monkeypatch, results_por_buzon):
+        import gmail_inbox_bot.bot as bot_module
+
+        monkeypatch.setattr(bot_module, "load_env", lambda: {})
+        monkeypatch.setattr(bot_module, "setup_telegram_logging", lambda **k: None)
+        monkeypatch.setattr(bot_module, "_build_llm_clients", lambda env: None)
+        monkeypatch.setattr(bot_module, "build_jev_classifier", lambda env: None)
+        monkeypatch.setattr(
+            bot_module,
+            "load_mailbox_configs",
+            lambda: [{"name": n, "email": f"{n}@x.com"} for n in results_por_buzon],
+        )
+        monkeypatch.setattr(bot_module, "_build_gmail_client", lambda env, config: config)
+        monkeypatch.setattr(
+            bot_module,
+            "process_mailbox",
+            lambda gmail, *a, **k: results_por_buzon[gmail["name"]],
+        )
+        monkeypatch.setattr(bot_module, "last_successful_poll", None)
+        bot_module.run(once=True)
+        return bot_module
+
+    def test_un_ciclo_sin_errores_de_lectura_actualiza_el_heartbeat(self, monkeypatch):
+        bot_module = self._run_once(monkeypatch, {"a": [], "b": ["moved"]})
+
+        assert bot_module.last_successful_poll is not None
+        assert bot_module.poll_interval_seconds == 600
+
+    def test_un_buzon_que_no_se_puede_leer_no_cuenta_como_poll_correcto(self, monkeypatch):
+        import gmail_inbox_bot.bot as bot_module
+
+        self._run_once(monkeypatch, {"a": [], "b": [bot_module.FETCH_ERROR]})
+
+        assert bot_module.last_successful_poll is None

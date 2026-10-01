@@ -101,3 +101,59 @@ def test_el_arranque_de_la_app_lanza_los_dos_threads(monkeypatch):
         assert hecho.wait(5)
 
     assert sorted(arrancados) == ["bot", "calendar"]
+
+
+# ------------------------------------------------------------------
+# Heartbeat: un thread vivo no basta, tiene que estar haciendo polls
+# ------------------------------------------------------------------
+
+
+@pytest.fixture
+def bot_vivo(monkeypatch):
+    import gmail_inbox_bot.bot as bot_module
+
+    monkeypatch.setattr(app_module, "_bot_thread", _FakeThread(True))
+    monkeypatch.setattr(app_module, "_reminder_thread", _FakeThread(True))
+    monkeypatch.setattr(app_module, "_stall_reported", False)
+    monkeypatch.setattr(bot_module, "poll_interval_seconds", 600)
+    monkeypatch.setattr(bot_module, "bot_started_at", app_module.time.time() - 60)
+    return bot_module
+
+
+def test_poll_reciente_es_ok(bot_vivo, monkeypatch):
+    monkeypatch.setattr(bot_vivo, "last_successful_poll", app_module.time.time() - 900)
+
+    assert _health()["threads"]["bot"] == "alive"
+
+
+def test_503_si_el_thread_vive_pero_no_hay_poll_correcto_hace_tres_ciclos(bot_vivo, monkeypatch):
+    """Un bucle colgado o un buzón que no se puede leer dejaban el contenedor "healthy"."""
+    monkeypatch.setattr(bot_vivo, "last_successful_poll", app_module.time.time() - 3 * 600 - 200)
+    avisos = []
+    monkeypatch.setattr(app_module.log, "error", lambda *a, **k: avisos.append(a))
+
+    for _ in range(3):
+        with pytest.raises(HTTPException) as exc:
+            _health()
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail["threads"]["bot"] == "stalled"
+    assert len(avisos) == 1  # un aviso por atasco, no uno por healthcheck
+
+
+def test_recien_arrancado_sin_poll_aun_no_hay_atasco(bot_vivo, monkeypatch):
+    monkeypatch.setattr(bot_vivo, "last_successful_poll", None)
+
+    assert _health()["threads"]["bot"] == "alive"
+
+
+def test_arrancado_hace_mucho_sin_ningun_poll_correcto_es_atasco(bot_vivo, monkeypatch):
+    """Un token revocado desde el arranque: nunca hay un poll correcto."""
+    monkeypatch.setattr(bot_vivo, "last_successful_poll", None)
+    monkeypatch.setattr(bot_vivo, "bot_started_at", app_module.time.time() - 4 * 600)
+    monkeypatch.setattr(app_module.log, "error", lambda *a, **k: None)
+
+    with pytest.raises(HTTPException) as exc:
+        _health()
+
+    assert exc.value.detail["threads"]["bot"] == "stalled"

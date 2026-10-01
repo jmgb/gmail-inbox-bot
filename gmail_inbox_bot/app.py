@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -43,10 +44,30 @@ def _thread_state(thread: threading.Thread | None, *, disabled: bool) -> str:
     return "alive" if thread.is_alive() else "dead"
 
 
+# Margen sobre tres ciclos de poll: un ciclo con muchos emails (Jev + acciones) tarda.
+_STALL_CYCLES = 3
+_STALL_GRACE_SECONDS = 120
+_stall_reported = False
+
+
+def _bot_state(disabled: bool) -> str:
+    """``stalled`` si el thread vive pero no hay un poll correcto en tres ciclos."""
+    state = _thread_state(_bot_thread, disabled=disabled)
+    if state != "alive":
+        return state
+    from . import bot
+
+    reference = bot.last_successful_poll or bot.bot_started_at
+    if reference is None or not bot.poll_interval_seconds:
+        return state
+    limit = _STALL_CYCLES * bot.poll_interval_seconds + _STALL_GRACE_SECONDS
+    return "stalled" if time.time() - reference > limit else state
+
+
 def _thread_states() -> dict[str, str]:
     disabled = _is_truthy("DISABLE_BOT")
     return {
-        "bot": _thread_state(_bot_thread, disabled=disabled),
+        "bot": _bot_state(disabled),
         "calendar_reminders": _thread_state(_reminder_thread, disabled=disabled),
     }
 
@@ -59,8 +80,15 @@ async def health() -> dict:
     este endpoint seguía devolviendo 200, así que el contenedor quedaba "Up" sin
     clasificar nada. Devolver 503 es lo que permite al HEALTHCHECK de Docker verlo.
     """
+    global _stall_reported
     threads = _thread_states()
-    if "dead" in threads.values():
+    stalled = threads["bot"] == "stalled"
+    if stalled and not _stall_reported:
+        # Docker no avisa de "unhealthy": este log.error llega a Telegram. Uno por atasco, no
+        # uno por healthcheck (cada 60 s).
+        log.error("Bot sin un poll correcto en %d ciclos: revisar buzones y logs", _STALL_CYCLES)
+    _stall_reported = stalled
+    if {"dead", "stalled"} & set(threads.values()):
         raise HTTPException(
             status_code=503,
             detail={"status": "degraded", "service": "gmail-inbox-bot", "threads": threads},

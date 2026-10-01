@@ -29,6 +29,14 @@ from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.bot", "logs/app.log")
 
+FETCH_ERROR = "error — failed to fetch emails"
+
+# Heartbeat que lee /health (app.py). Que el thread siga vivo no basta: un bucle colgado o un
+# buzón que no se puede leer dejaban el contenedor "healthy" sin procesar nada.
+bot_started_at: float | None = None
+last_successful_poll: float | None = None  # último ciclo en que se leyeron todos los buzones
+poll_interval_seconds: int | None = None
+
 
 class _LoggingAlertSink:
     """Registra el motivo de cada fallback en el log de la app.
@@ -362,7 +370,7 @@ def process_mailbox(
         emails = gmail.get_unread_emails(user_email, top=top, query=poll_query)
     except Exception:
         log.exception("Failed to fetch emails for %s", user_email)
-        return ["error — failed to fetch emails"]
+        return [FETCH_ERROR]
 
     if not emails:
         log.info("No unread emails for %s", user_email)
@@ -435,10 +443,20 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
         once,
     )
 
+    global bot_started_at, last_successful_poll, poll_interval_seconds
+    bot_started_at = time.time()
+    poll_interval_seconds = poll_interval
+
     while True:
+        fetch_failed = False
         for gmail, config in clients:
             query = config.get("query", "is:unread in:inbox")
-            process_mailbox(gmail, openai_client, config, dry_run=dry_run, query=query, jev=jev)
+            results = process_mailbox(
+                gmail, openai_client, config, dry_run=dry_run, query=query, jev=jev
+            )
+            fetch_failed = fetch_failed or FETCH_ERROR in results
+        if not fetch_failed:
+            last_successful_poll = time.time()
 
         if once:
             log.info("Single-run mode — exiting")

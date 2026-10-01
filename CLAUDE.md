@@ -228,7 +228,7 @@ propósito). Diseño:
 - **Puerto**: `8007` (mapeado a `8000` interno)
 - **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
 - **Log Viewer**: https://email.pymechat.com/admin/logs
-- **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto; el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
+- **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto, o si el bot lleva tres ciclos de poll sin leer bien todos los buzones (`stalled`, avisa una vez por Telegram); el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
 - **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
 - **Docker socket**: el contenedor no monta `/var/run/docker.sock`; el visor habla con el sidecar `docker-socket-proxy` por TCP (`DOCKER_API_TCP`), restringido por `-allowfrom` y `-allowGET` a los logs de este único contenedor. Sin la variable, el código vuelve al socket unix
 
