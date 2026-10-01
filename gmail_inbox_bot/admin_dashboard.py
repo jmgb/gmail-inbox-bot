@@ -29,10 +29,13 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 _PAGE_SIZE = 1000
 
+# Mismas claves que clasificador_jev.yml (un test comprueba la paridad): una categoría que
+# faltara aquí quedaba fuera de la matriz de confusión sin que nada avisara.
 JEV_CATEGORIES = (
     "personal",
     "finanzas",
     "compras",
+    "facturas",
     "newsletters",
     "notificaciones",
     "automatico",
@@ -61,8 +64,8 @@ def _is_authenticated(request: Request) -> bool:
 
 
 async def _fetch_metrics(
-    date_from: str | None,
-    date_to: str | None,
+    date_from: date | None,
+    date_to: date | None,
     mailbox: str | None,
     *,
     select: str = "mailbox,category,created_at",
@@ -81,7 +84,6 @@ async def _fetch_metrics(
         "apikey": key,
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "Prefer": "count=exact",
     }
 
     params: dict[str, str] = {
@@ -89,14 +91,18 @@ async def _fetch_metrics(
         "order": "created_at.asc",
         **(extra_params or {}),
     }
+    # Las fechas llegan ya validadas como ``date`` por FastAPI: nunca se interpola texto libre
+    # del usuario en la sintaxis de filtros de PostgREST.
     if date_from:
-        params["created_at"] = f"gte.{date_from}"
+        params["created_at"] = f"gte.{date_from.isoformat()}"
     if date_to:
-        end_exclusive = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+        end_exclusive = (date_to + timedelta(days=1)).isoformat()
         key_name = "created_at" if "created_at" not in params else "and"
         if key_name == "and":
             params.pop("created_at")
-            params["and"] = f"(created_at.gte.{date_from},created_at.lt.{end_exclusive})"
+            params["and"] = (
+                f"(created_at.gte.{date_from.isoformat()},created_at.lt.{end_exclusive})"
+            )
         else:
             params["created_at"] = f"lt.{end_exclusive}"
     if mailbox:
@@ -249,8 +255,8 @@ async def dashboard_page(request: Request) -> HTMLResponse | RedirectResponse:
 @router.get("/api/metrics")
 async def api_metrics(
     request: Request,
-    date_from: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
-    date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
+    date_from: date | None = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: date | None = Query(None, description="End date (YYYY-MM-DD)"),
     mailbox: str | None = Query(None, description="Filter by mailbox name"),
 ) -> dict:
     """JSON API endpoint returning aggregated dashboard metrics."""
@@ -278,8 +284,8 @@ async def api_metrics(
 @router.get("/api/jev_shadow")
 async def api_jev_shadow(
     request: Request,
-    date_from: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
-    date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
+    date_from: date | None = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: date | None = Query(None, description="End date (YYYY-MM-DD)"),
     mailbox: str | None = Query(None, description="Filter by mailbox name"),
 ) -> dict:
     """Comparativa histórica Jev vs clasificador LLM (de la fase sombra, hasta el 2026-09-27)."""

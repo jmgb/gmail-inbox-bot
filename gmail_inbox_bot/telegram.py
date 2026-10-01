@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -78,6 +79,19 @@ def _retry_delay(attempt: int, response: httpx2.Response | None = None) -> int:
     return min(delay, MAX_RETRY_DELAY_SECONDS)
 
 
+def _as_plain_text(payload: dict) -> dict:
+    """Copia del payload sin ``parse_mode`` y con el HTML de Telegram deshecho.
+
+    El troceo corta a ciegas cada 3500 caracteres: un ``<pre>`` abierto en un trozo y cerrado
+    en el siguiente, o una entidad partida, hacen que Telegram rechace el trozo con un 400
+    ("can't parse entities") y el aviso se perdía. En texto plano siempre entra.
+    """
+    text = re.sub(r"</?(?:b|i|u|pre|a)(?:\s[^>]*)?>", "", payload.get("text", ""))
+    plain = {k: v for k, v in payload.items() if k != "parse_mode"}
+    plain["text"] = html.unescape(text)
+    return plain
+
+
 def _send_chunk(
     *,
     url: str,
@@ -112,6 +126,19 @@ def _send_chunk(
             last_error = resp.json().get("description", resp.text)
         except Exception:
             last_error = resp.text or "no response body"
+
+        if (
+            resp.status_code == 400
+            and "parse_mode" in payload
+            and "parse entities" in str(last_error).lower()
+        ):
+            log.warning("%s — HTML rechazado por Telegram, reenviando en texto plano", referencia)
+            return _send_chunk(
+                url=url,
+                payload=_as_plain_text(payload),
+                referencia=referencia,
+                max_attempts=max_attempts,
+            )
 
         if resp.status_code in RETRYABLE_STATUS_CODES and attempt < max_attempts:
             delay = _retry_delay(attempt, resp)

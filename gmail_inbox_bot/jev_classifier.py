@@ -29,7 +29,8 @@ from .logger import setup_logger
 
 log = setup_logger("gmail_inbox_bot.jev_classifier", "logs/app.log")
 
-DEFAULT_CRITERIA_PATH = Path("gmail_inbox_bot/prompts/clasificador_jev.yml")
+# Relativa al paquete, no al cwd: arrancar desde otro directorio no debe tumbar el bot.
+DEFAULT_CRITERIA_PATH = Path(__file__).resolve().parent / "prompts" / "clasificador_jev.yml"
 JEV_MAX_BODY_CHARS = 6000
 # La llamada va en serie dentro de _process_email, así que su techo de latencia es el
 # techo que le impone al poll. Medido en 201 clasificaciones en sombra: p50 340 ms,

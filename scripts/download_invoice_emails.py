@@ -202,38 +202,44 @@ def process_account(*, gmail, mailbox: dict, month: str, dest: Path, force: bool
             artifacts = extract_artifacts(
                 raw["raw_bytes"], out_dir, filename_prefix=".tmp_extract_"
             )
-            for artifact in artifacts:
-                if artifact.kind != "pdf":
-                    artifact.path.unlink(missing_ok=True)
-                    continue
-                final = (
-                    out_dir
-                    / tipo
-                    / pdf_filename(
-                        internal_date_iso=date_iso,
-                        sender=sender,
-                        message_id=message_id,
-                        original=artifact.filename,
+            try:
+                for artifact in artifacts:
+                    if artifact.kind != "pdf":
+                        artifact.path.unlink(missing_ok=True)
+                        continue
+                    final = (
+                        out_dir
+                        / tipo
+                        / pdf_filename(
+                            internal_date_iso=date_iso,
+                            sender=sender,
+                            message_id=message_id,
+                            original=artifact.filename,
+                        )
                     )
-                )
-                final.parent.mkdir(parents=True, exist_ok=True)
-                entry = {
-                    "mailbox": name,
-                    "tipo": tipo,
-                    "date": date_iso[:10],
-                    "sender": sender,
-                    "subject": subject,
-                    "message_id": message_id,
-                    "file": final.name,
-                    "size": artifact.size_bytes,
-                    "sha256": artifact.sha256,
-                }
-                if final.exists() and final.stat().st_size > 0 and not force:
+                    final.parent.mkdir(parents=True, exist_ok=True)
+                    entry = {
+                        "mailbox": name,
+                        "tipo": tipo,
+                        "date": date_iso[:10],
+                        "sender": sender,
+                        "subject": subject,
+                        "message_id": message_id,
+                        "file": final.name,
+                        "size": artifact.size_bytes,
+                        "sha256": artifact.sha256,
+                    }
+                    if final.exists() and final.stat().st_size > 0 and not force:
+                        artifact.path.unlink(missing_ok=True)
+                        skipped.append(entry)
+                    else:
+                        artifact.path.replace(final)
+                        downloaded.append(entry)
+            finally:
+                # Un fallo a mitad dejaba los .tmp_extract_* sueltos en la carpeta de facturas.
+                # Los PDFs ya colocados se movieron con replace() y no existen en la ruta temporal.
+                for artifact in artifacts:
                     artifact.path.unlink(missing_ok=True)
-                    skipped.append(entry)
-                else:
-                    artifact.path.replace(final)
-                    downloaded.append(entry)
         except Exception as exc:  # noqa: BLE001 — un email malo no para la pasada
             errors.append(
                 {"mailbox": name, "message_id": message_id, "error": f"{type(exc).__name__}: {exc}"}

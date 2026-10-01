@@ -833,3 +833,54 @@ class TestSignature:
         execute(graph, config, email_msg, classification)
         suffix = graph.forward_email.call_args[1]["body_suffix"]
         assert "aiship.co" in suffix
+
+
+# ---------- Fallbacks: el email se queda en el inbox (auditoría 2026-10-01) ----------
+
+
+class TestFallbackNoSaleDelInbox:
+    def test_reply_sin_plantilla_no_ejecuta_el_folder_de_la_regla(self, graph, config, email_msg):
+        config["routing"] = {"x": {"action": "reply", "folder": "Archivo", "is_read": True}}
+        config["templates"] = {}
+
+        result = execute(graph, config, email_msg, {"categoria": "x"})
+
+        assert TAG_PENDING_MANAGE in result
+        graph.move_email.assert_not_called()
+        # Solo la llamada del tag: el override is_read=True no se aplica después.
+        graph.update_email.assert_called_once()
+        assert graph.update_email.call_args.kwargs["is_read"] is False
+
+    def test_reply_and_move_sin_plantilla_no_mueve(self, graph, config, email_msg):
+        config["routing"] = {"x": {"action": "reply_and_move", "folder": "Archivo"}}
+        config["templates"] = {}
+
+        result = execute(graph, config, email_msg, {"categoria": "x"})
+
+        assert TAG_PENDING_MANAGE in result
+        graph.move_email.assert_not_called()
+
+    def test_reply_with_attachment_sin_plantilla_no_envia_vacio(self, graph, config, email_msg):
+        config["routing"] = {
+            "x": {"action": "reply_with_attachment", "attachments": [{"name": "a.pdf"}]}
+        }
+        config["templates"] = {}
+
+        result = execute(graph, config, email_msg, {"categoria": "x"})
+
+        assert TAG_PENDING_MANAGE in result
+        graph.reply_with_attachment.assert_not_called()
+
+    def test_dynamic_reply_fallido_no_ejecuta_el_folder(
+        self, graph, config, email_msg, monkeypatch
+    ):
+        monkeypatch.setattr(actions, "load_prompt", lambda _: "prompt")
+        monkeypatch.setattr(actions, "generate_response", lambda *a, **k: None)
+        config["routing"] = {
+            "x": {"action": "dynamic_reply", "response_prompt_file": "p.txt", "folder": "Archivo"}
+        }
+
+        result = execute(graph, config, email_msg, {"categoria": "x"}, openai_client=MagicMock())
+
+        assert TAG_ERROR in result
+        graph.move_email.assert_not_called()

@@ -53,3 +53,26 @@ def test_migrate_archive_creates_flat_attachment_folder_and_updates_manifest(tmp
         flat_eml.relative_to(tmp_path)
     )
     manifest.close()
+
+
+def test_no_borra_el_fichero_si_la_fuente_es_el_mismo_fichero_con_otra_ruta(tmp_path: Path):
+    """Con `source != target`, un symlink (o /mnt/c sin mayúsculas) al mismo fichero borraba
+    la única copia."""
+    eml = tmp_path / "jesus82c" / "messages" / "message-1.eml"
+    eml.parent.mkdir(parents=True)
+    eml.write_bytes(b"eml")
+    (tmp_path / "alias").symlink_to(tmp_path / "jesus82c")
+    manifest = Manifest(tmp_path / ".state.sqlite3")
+    manifest.record_message(
+        account="jesus82c@gmail.com",
+        mailbox="jesus82c",
+        message_id="message-1",
+        eml_path="alias/messages/message-1.eml",
+        eml_sha256=hashlib.sha256(b"eml").hexdigest(),
+        status="completed",
+    )
+
+    migrate_archive(tmp_path, manifest)
+
+    assert eml.read_bytes() == b"eml"
+    manifest.close()

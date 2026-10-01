@@ -62,3 +62,17 @@ def test_debug_mode_manda_sobre_log_level(tmp_path, monkeypatch):
     logger = setup_logger("test_logger.debug_mode_gana", str(tmp_path / "app.log"), debug_mode=True)
 
     assert _file_levels(logger) == [logging.DEBUG]
+
+
+def test_los_loggers_del_mismo_fichero_comparten_un_unico_handler(tmp_path, monkeypatch):
+    """Dos RotatingFileHandler sobre el mismo fichero rotan cada uno por su cuenta: tras la
+    primera rotación el resto sigue escribiendo en el fichero renombrado."""
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    log_file = str(tmp_path / "app.log")
+    uno = setup_logger("test_logger.compartido_uno", log_file)
+    dos = setup_logger("test_logger.compartido_dos", log_file)
+
+    handlers_uno = [h for h in uno.handlers if isinstance(h, RotatingFileHandler)]
+    handlers_dos = [h for h in dos.handlers if isinstance(h, RotatingFileHandler)]
+    assert len(handlers_uno) == 1
+    assert handlers_uno[0] is handlers_dos[0]

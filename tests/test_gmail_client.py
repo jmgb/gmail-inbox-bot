@@ -3,6 +3,7 @@
 import base64
 from unittest.mock import MagicMock
 
+import httpx2
 import pytest
 
 from gmail_inbox_bot.gmail_client import (
@@ -780,3 +781,146 @@ class TestCompatWithActions:
         assert "content" in msg["body"]
         assert "categories" in msg
         assert "receivedDateTime" in msg
+
+
+# ------------------------------------------------------------------
+# Gaps cerrados en la auditoría (2026-10-01)
+# ------------------------------------------------------------------
+
+
+def _ok(json_body=None):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.headers = {}
+    resp.json.return_value = json_body or {}
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+class TestTransportRetries:
+    def test_get_se_reintenta_tras_un_timeout_de_lectura(self, client, mock_http, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", MagicMock())
+        mock_http.request.side_effect = [httpx2.ReadTimeout("lento"), _ok({"messages": []})]
+
+        resp = client._request("GET", "/messages")
+
+        assert resp.json() == {"messages": []}
+        assert mock_http.request.call_count == 2
+
+    def test_envio_no_se_reintenta_tras_un_timeout_de_lectura(self, client, mock_http, monkeypatch):
+        """El POST pudo llegar: reintentarlo duplicaría el email."""
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", MagicMock())
+        mock_http.request.side_effect = [httpx2.ReadTimeout("lento"), _ok()]
+
+        with pytest.raises(httpx2.ReadTimeout):
+            client._request("POST", "/messages/send", json={})
+        assert mock_http.request.call_count == 1
+
+    def test_envio_si_se_reintenta_si_no_llego_a_conectar(self, client, mock_http, monkeypatch):
+        monkeypatch.setattr("gmail_inbox_bot.gmail_client.time.sleep", MagicMock())
+        mock_http.request.side_effect = [httpx2.ConnectError("caido"), _ok()]
+
+        client._request("POST", "/messages/send", json={})
+
+        assert mock_http.request.call_count == 2
+
+
+class TestLabelConflict:
+    def test_409_recarga_las_labels_y_reutiliza_la_existente(self, client, mock_http):
+        """Otro proceso creó la label después de cargar la caché: Gmail devuelve 409."""
+        client._label_cache = {"INBOX": "INBOX"}
+        conflict = MagicMock()
+        conflict.status_code = 409
+        conflict.headers = {}
+        conflict.raise_for_status.side_effect = httpx2.HTTPStatusError(
+            "conflict", request=MagicMock(), response=conflict
+        )
+        reload = _ok({"labels": [{"name": "INBOX", "id": "INBOX"}, {"name": "X", "id": "L_9"}]})
+        mock_http.request.side_effect = [conflict, reload]
+
+        assert client._ensure_label("X") == "L_9"
+
+
+class TestCharsetDecoding:
+    def test_html_en_iso_8859_1_conserva_las_tildes(self):
+        data = base64.urlsafe_b64encode("<p>Información del envío</p>".encode("latin-1"))
+        payload = {
+            "mimeType": "text/html",
+            "headers": [{"name": "Content-Type", "value": 'text/html; charset="ISO-8859-1"'}],
+            "body": {"data": data.decode()},
+        }
+        assert _decode_body(payload) == "<p>Información del envío</p>"
+
+    def test_charset_desconocido_cae_a_utf8(self):
+        data = base64.urlsafe_b64encode("ñ".encode())
+        payload = {
+            "mimeType": "text/plain",
+            "headers": [{"name": "Content-Type", "value": "text/plain; charset=x-inventado"}],
+            "body": {"data": data.decode()},
+        }
+        assert _decode_body(payload) == "ñ"
+
+    def test_un_adjunto_de_texto_no_se_toma_por_el_cuerpo(self):
+        cuerpo = base64.urlsafe_b64encode(b"<p>cuerpo</p>").decode()
+        adjunto = base64.urlsafe_b64encode(b"col1;col2").decode()
+        payload = {
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {"mimeType": "text/plain", "filename": "datos.csv", "body": {"data": adjunto}},
+                {"mimeType": "text/html", "filename": "", "body": {"data": cuerpo}},
+            ],
+        }
+        assert _decode_body(payload) == "<p>cuerpo</p>"
+
+
+class TestReplyRecipients:
+    def _meta(self, headers):
+        return _ok({"threadId": "t1", "payload": {"headers": headers}})
+
+    def _sent_raw(self, mock_http) -> bytes:
+        body = mock_http.request.call_args_list[-1].kwargs["json"]
+        return base64.urlsafe_b64decode(body["raw"])
+
+    def test_responde_al_reply_to_si_lo_hay(self, client, mock_http):
+        mock_http.request.side_effect = [
+            self._meta(
+                [
+                    {"name": "From", "value": "noreply@tienda.com"},
+                    {"name": "Reply-To", "value": "soporte@tienda.com"},
+                ]
+            ),
+            _ok(),
+        ]
+        client.reply_to_email("me@gmail.com", "m1", "<p>x</p>", "Re: x")
+        assert b"To: soporte@tienda.com" in self._sent_raw(mock_http)
+
+    def test_nombre_con_tildes_no_codifica_la_direccion(self, client, mock_http):
+        mock_http.request.side_effect = [
+            self._meta([{"name": "From", "value": "José Núñez <jose@example.com>"}]),
+            _ok(),
+        ]
+        client.reply_to_email("me@gmail.com", "m1", "<p>x</p>", "Re: x")
+        assert b"<jose@example.com>" in self._sent_raw(mock_http)
+
+
+class TestMetadataHeadersCasing:
+    def test_cabeceras_sin_distinguir_mayusculas(self, client, mock_http):
+        """Gmail conserva el casing original: "Message-Id" y "reply-to" son habituales."""
+        mock_http.request.return_value = _ok(
+            {
+                "threadId": "t1",
+                "payload": {
+                    "headers": [
+                        {"name": "Message-Id", "value": "<orig@x.com>"},
+                        {"name": "reply-to", "value": "soporte@x.com"},
+                        {"name": "FROM", "value": "noreply@x.com"},
+                    ]
+                },
+            }
+        )
+
+        meta = client._get_message_metadata("m1")
+
+        assert meta["messageId"] == "<orig@x.com>"
+        assert meta["reply_to"] == "soporte@x.com"
+        assert meta["from"] == "noreply@x.com"

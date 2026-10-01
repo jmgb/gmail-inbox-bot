@@ -138,3 +138,23 @@ class TestSetupTelegramLogging:
             for name in names:
                 logger = logging.getLogger(name)
                 logger.handlers = [h for h in logger.handlers if not isinstance(h, TelegramHandler)]
+
+
+class TestTelegramHandlerEscaping:
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
+    def test_el_texto_se_escapa_una_sola_vez(self, mock_post, monkeypatch):
+        """El handler escapaba y enviar_mensaje_telegram volvía a escapar: el aviso mostraba
+        "&lt;a@b.com&gt;" literal en vez de "<a@b.com>"."""
+        monkeypatch.setenv("TELEGRAM_TOKEN", "t")
+        mock_post.return_value.status_code = 200
+        handler = TelegramHandler(chat_id="123")
+        logger = logging.getLogger("gmail_inbox_bot.bot")
+        record = logger.makeRecord(
+            "gmail_inbox_bot.bot", logging.ERROR, "bot.py", 1, "De: Foo <a@b.com> & co", (), None
+        )
+        handler.emit(record)
+
+        texto = mock_post.call_args.kwargs["json"]["text"]
+        assert "&lt;a@b.com&gt; &amp; co" in texto
+        assert "&amp;lt;" not in texto
+        assert "&amp;amp;" not in texto

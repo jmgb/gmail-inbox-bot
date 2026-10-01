@@ -41,6 +41,11 @@ _TEMPLATE_FILE = _PROJECT_ROOT / "templates" / "calendar_reminder.html"
 STATE_PATH = _PROJECT_ROOT / "logs" / "calendar_reminders_state.json"
 MADRID = ZoneInfo("Europe/Madrid")
 _template_cache: dict[str, Template] = {}
+# Si una pasada falla (Calendar caído, scope revocado, envío rechazado), el día no se marca
+# como hecho y el scheduler lo reintenta. Sin límite lo hacía cada minuto, con un aviso por
+# Telegram en cada intento durante todo el día.
+RETRY_INTERVAL = timedelta(minutes=15)
+MAX_ATTEMPTS_PER_DAY = 4
 
 
 # ------------------------------------------------------------------
@@ -248,8 +253,14 @@ def process_mailbox(
     sent_at: str,
     dry_run: bool = False,
     after_record_sent=None,
+    now: datetime | None = None,
 ) -> list[dict]:
-    """Read today's events for one mailbox and send reminders. Returns results."""
+    """Read today's events for one mailbox and send reminders. Returns results.
+
+    Con *now*, las reuniones que ya han empezado se saltan: una reunión de las 08:30 no
+    debe recibir a las 09:16 (o en un reintento por la tarde) un "recordatorio" que delata
+    que nadie lo escribió a mano.
+    """
     settings = config.get("calendar_reminders", {})
     tz = settings.get("timezone", "Europe/Madrid")
     max_attendees = settings.get("max_attendees", 2)
@@ -262,6 +273,9 @@ def process_mailbox(
 
     for event in events:
         if not event_qualifies(event, max_attendees):
+            continue
+        if now is not None and event["start"] <= now:
+            results.append({"status": "started", "invitee": "", "event": event["id"]})
             continue
         for invitee in reminder_recipients(event):
             email = invitee["email"]
@@ -345,18 +359,24 @@ def run_once(
     sent_at: str | None = None,
     clients: list[tuple] | None = None,
     state_path: str | Path = STATE_PATH,
+    now: datetime | None = None,
+    notify_failures: bool = True,
 ) -> dict[str, list[dict]]:
     """Run the reminder job once for every enabled mailbox.
 
     ``clients`` can be injected for testing; otherwise they are built from the
     environment and YAML configs. State is only persisted when not ``dry_run``.
+    Sin *day*, la pasada es la de hoy y *now* toma la hora actual, de modo que las
+    reuniones ya empezadas se saltan. ``notify_failures=False`` deja los fallos solo en el
+    log (lo usa el scheduler en los reintentos para no repetir el aviso).
     """
     if clients is None:
         env = load_env()
         configs = load_mailbox_configs()
         clients = _build_clients(env, configs)
     if day is None:
-        day = datetime.now(MADRID).date()
+        now = now or datetime.now(MADRID)
+        day = now.date()
     if sent_at is None:
         sent_at = datetime.now(MADRID).isoformat()
 
@@ -380,12 +400,13 @@ def run_once(
                 sent_at=sent_at,
                 dry_run=dry_run,
                 after_record_sent=None if dry_run else persist_progress,
+                now=now,
             )
             all_results[mailbox] = results
             sent = sum(1 for r in results if r["status"] == "sent")
             failed = [r["invitee"] for r in results if r["status"] == "error"]
             log.info("Calendar reminders for %s: %d sent", mailbox, sent)
-            if failed and not dry_run:
+            if failed and not dry_run and notify_failures:
                 notify_reminder_failure(
                     mailbox=mailbox,
                     detail=f"{len(failed)} envío(s) fallido(s): {', '.join(failed)}",
@@ -399,7 +420,7 @@ def run_once(
                 persist_progress()
         except Exception as exc:
             log.exception("Reminder job failed for mailbox %s", mailbox)
-            if not dry_run:
+            if not dry_run and notify_failures:
                 notify_reminder_failure(mailbox=mailbox, detail=f"{type(exc).__name__}: {exc}")
 
     return all_results
@@ -411,13 +432,20 @@ def run_scheduler(
     poll_seconds: int = 60,
     stop=None,
 ) -> None:
-    """Loop forever, triggering ``run_once`` per mailbox at its ``send_time``."""
+    """Loop forever, triggering ``run_once`` per mailbox at its ``send_time``.
+
+    Una pasada fallida se reintenta cada ``RETRY_INTERVAL`` hasta ``MAX_ATTEMPTS_PER_DAY``
+    veces. Solo el primer intento avisa por Telegram; si se agotan, se avisa una vez más y
+    el buzón queda en pausa hasta el día siguiente.
+    """
     env = load_env()
     configs = load_mailbox_configs()
     clients = _build_clients(env, configs)
     if not clients:
         log.info("No mailboxes with calendar_reminders enabled — scheduler idle")
     log.info("Calendar reminder scheduler started (%d mailbox(es))", len(clients))
+    attempts: dict[tuple[str, date], int] = {}
+    last_attempt: dict[str, datetime] = {}
 
     while stop is None or not stop.is_set():
         try:
@@ -427,13 +455,34 @@ def run_scheduler(
             for gmail, calendar, config in clients:
                 mailbox = config.get("name", config.get("email", ""))
                 send_time = config.get("calendar_reminders", {}).get("send_time", "09:00")
-                if should_send(now, send_time, state.ran_today(mailbox, day)):
-                    log.info("Triggering calendar reminders for %s", mailbox)
-                    run_once(
-                        clients=[(gmail, calendar, config)],
-                        day=day,
-                        sent_at=now.isoformat(),
-                        dry_run=dry_run,
+                if not should_send(now, send_time, state.ran_today(mailbox, day)):
+                    continue
+                done = attempts.get((mailbox, day), 0)
+                if done >= MAX_ATTEMPTS_PER_DAY:
+                    continue
+                previous = last_attempt.get(mailbox)
+                if done and previous is not None and now - previous < RETRY_INTERVAL:
+                    continue
+                attempts[(mailbox, day)] = done + 1
+                last_attempt[mailbox] = now
+                log.info("Triggering calendar reminders for %s (intento %d)", mailbox, done + 1)
+                run_once(
+                    clients=[(gmail, calendar, config)],
+                    day=day,
+                    sent_at=now.isoformat(),
+                    dry_run=dry_run,
+                    now=now,
+                    notify_failures=done == 0,
+                )
+                if (
+                    done + 1 >= MAX_ATTEMPTS_PER_DAY
+                    and not dry_run
+                    and not ReminderState.load(STATE_PATH, strict=False).ran_today(mailbox, day)
+                ):
+                    notify_reminder_failure(
+                        mailbox=mailbox,
+                        detail=f"{MAX_ATTEMPTS_PER_DAY} intentos fallidos hoy; no se reintenta "
+                        "hasta mañana. Revisa el log.",
                     )
         except Exception:
             log.exception("Reminder scheduler iteration failed")

@@ -46,6 +46,11 @@ def load_mailbox_configs(config_dir: str = "config") -> list[dict]:
 
     Each YAML file represents one mailbox the bot monitors.
     Returns the list sorted by filename.
+
+    Un YAML roto o que no es un mapeo **lanza**: antes se registraba y se saltaba, y el buzón
+    dejaba de procesarse sin que nada avisara (el logger de config no va a Telegram). Igual
+    que con los criterios de Jev, es un error de despliegue y debe parar el arranque, que es
+    lo que ven el healthcheck y el aviso de "Bot thread crashed".
     """
     config_path = Path(config_dir)
     if not config_path.is_dir():
@@ -56,12 +61,13 @@ def load_mailbox_configs(config_dir: str = "config") -> list[dict]:
     for yml_file in sorted(config_path.glob("*.y*ml")):
         try:
             data = yaml.safe_load(yml_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                # Ensure the config has a name for logging
-                data.setdefault("name", yml_file.stem)
-                configs.append(data)
-                log.info("Loaded mailbox config: %s", data.get("name"))
-        except Exception:
-            log.exception("Failed to load config file: %s", yml_file)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Config de buzón inválida en {yml_file}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"Config de buzón inválida en {yml_file}: no es un mapeo YAML")
+        # Ensure the config has a name for logging
+        data.setdefault("name", yml_file.stem)
+        configs.append(data)
+        log.info("Loaded mailbox config: %s", data.get("name"))
 
     return configs

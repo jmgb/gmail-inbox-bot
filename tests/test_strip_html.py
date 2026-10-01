@@ -62,3 +62,18 @@ class TestStripHtml:
     def test_nested_tags(self):
         result = strip_html("<div><span><b>Negrita</b></span></div>")
         assert result == "Negrita"
+
+    def test_css_script_y_comentarios_no_llegan_al_clasificador(self):
+        """Jev solo ve 6000 caracteres: el CSS de las plantillas de marketing se los comía."""
+        html = (
+            "<html><head><title>T</title><style>.a{color:red}</style></head>"
+            "<body><!--[if mso]><table><![endif]--><script>var x = 1;</script>"
+            "<p>Tu pedido ha salido</p></body></html>"
+        )
+        assert strip_html(html) == "Tu pedido ha salido"
+
+    def test_parrafos_no_quedan_pegados(self):
+        assert strip_html("<p>Hola</p><p>Mundo</p>") == "Hola\nMundo"
+
+    def test_indentacion_y_nbsp_colapsados(self):
+        assert strip_html("<div>\n      Hola&nbsp;&nbsp;   mundo\n    </div>") == "Hola mundo"

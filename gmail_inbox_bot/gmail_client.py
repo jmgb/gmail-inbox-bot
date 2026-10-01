@@ -15,6 +15,7 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr, getaddresses
 from pathlib import Path
 
 import httpx2
@@ -27,6 +28,10 @@ log = setup_logger("gmail_inbox_bot.gmail_client", "logs/app.log")
 
 BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+# Llamadas que se pueden repetir sin efecto doble si un error de red deja la duda de si
+# llegaron: lecturas, modify (añadir/quitar labels) y trash. Enviar o crear un borrador no:
+# un timeout de lectura tras el POST podría duplicar el email.
+_IDEMPOTENT_SUFFIXES = ("/modify", "/trash")
 
 
 class GmailClient:
@@ -119,7 +124,25 @@ class GmailClient:
                 elapsed = time.monotonic() - self._last_request_at
                 if elapsed < self._request_interval:
                     time.sleep(self._request_interval - elapsed)
-            resp = self._http.request(method, url, headers=self._headers(), **kwargs)
+            try:
+                resp = self._http.request(method, url, headers=self._headers(), **kwargs)
+            except httpx2.TransportError as exc:
+                self._last_request_at = time.monotonic()
+                if attempt >= retries or not self._is_retryable_transport_error(method, path, exc):
+                    raise
+                delay = self._retry_delay(None, _backoff, attempt)
+                log.warning(
+                    "Gmail API %s %s failed (%s), retrying in %.1fs (%d/%d)",
+                    method,
+                    path,
+                    type(exc).__name__,
+                    delay,
+                    attempt + 1,
+                    retries,
+                )
+                time.sleep(delay)
+                attempt += 1
+                continue
             self._last_request_at = time.monotonic()
 
             if resp.status_code == 401 and not refreshed:
@@ -147,6 +170,13 @@ class GmailClient:
         return resp
 
     @staticmethod
+    def _is_retryable_transport_error(method: str, path: str, exc: Exception) -> bool:
+        """Un fallo de conexión nunca llegó a Gmail; el resto solo si la llamada es idempotente."""
+        if isinstance(exc, (httpx2.ConnectError, httpx2.ConnectTimeout)):
+            return True
+        return method.upper() == "GET" or path.endswith(_IDEMPOTENT_SUFFIXES)
+
+    @staticmethod
     def _is_retryable_response(resp: httpx2.Response) -> bool:
         if resp.status_code == 429 or resp.status_code >= 500:
             return True
@@ -160,9 +190,9 @@ class GmailClient:
         return bool(reasons & {"rateLimitExceeded", "userRateLimitExceeded", "backendError"})
 
     @staticmethod
-    def _retry_delay(resp: httpx2.Response, backoff: float, attempt: int) -> float:
+    def _retry_delay(resp: httpx2.Response | None, backoff: float, attempt: int) -> float:
         try:
-            retry_after = resp.headers.get("Retry-After")
+            retry_after = resp.headers.get("Retry-After") if resp is not None else None
             if retry_after is not None:
                 return max(0.0, float(retry_after))
         except (TypeError, ValueError):
@@ -193,15 +223,27 @@ class GmailClient:
             if existing.casefold() == name.casefold():
                 return label_id
         # Create the label
-        resp = self._request(
-            "POST",
-            "/labels",
-            json={
-                "name": name,
-                "labelListVisibility": "labelShow",
-                "messageListVisibility": "show",
-            },
-        )
+        try:
+            resp = self._request(
+                "POST",
+                "/labels",
+                json={
+                    "name": name,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                },
+            )
+        except httpx2.HTTPStatusError as exc:
+            # 409: la creó otro proceso (los scripts, la otra instancia en un deploy, el
+            # usuario a mano) después de cargar la caché. Se recarga y se reutiliza.
+            if exc.response.status_code != 409:
+                raise
+            self._label_cache.clear()
+            self._load_labels()
+            for existing, label_id in self._label_cache.items():
+                if existing.casefold() == name.casefold():
+                    return label_id
+            raise
         label_id = resp.json()["id"]
         self._label_cache[name] = label_id
         log.info("Created Gmail label: %s -> %s", name, label_id)
@@ -344,17 +386,20 @@ class GmailClient:
             f"/messages/{message_id}",
             params={
                 "format": "metadata",
-                "metadataHeaders": ["Message-ID", "References", "Subject", "From"],
+                "metadataHeaders": ["Message-ID", "References", "Subject", "From", "Reply-To"],
             },
         )
         data = resp.json()
-        headers = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
+        # Los nombres de cabecera no distinguen mayúsculas y Gmail conserva el casing original
+        # ("Message-Id", "reply-to"): con un dict literal se perdían el hilo y el Reply-To.
+        headers = data.get("payload", {}).get("headers", [])
         return {
             "threadId": data.get("threadId", ""),
-            "messageId": headers.get("Message-ID", ""),
-            "references": headers.get("References", ""),
-            "subject": headers.get("Subject", ""),
-            "from": headers.get("From", ""),
+            "messageId": _get_header(headers, "Message-ID"),
+            "references": _get_header(headers, "References"),
+            "subject": _get_header(headers, "Subject"),
+            "from": _get_header(headers, "From"),
+            "reply_to": _get_header(headers, "Reply-To"),
         }
 
     def _build_reply_mime(
@@ -406,7 +451,7 @@ class GmailClient:
         if override_to:
             to_addr = override_to["address"]
         else:
-            to_addr = meta["from"]
+            to_addr = _format_addresses(meta["reply_to"] or meta["from"])
         mime = self._build_reply_mime(meta, html_body, subject, from_addr, to_addr)
         self._send_or_draft(mime, meta["threadId"], force_draft)
 
@@ -444,7 +489,7 @@ class GmailClient:
         if override_to:
             to_addr = override_to["address"]
         else:
-            to_addr = meta["from"]
+            to_addr = _format_addresses(meta["reply_to"] or meta["from"])
 
         msg = MIMEMultipart()
         msg["To"] = to_addr
@@ -500,7 +545,7 @@ class GmailClient:
             html_body += body_suffix
 
         msg = MIMEText(html_body, "html", "utf-8")
-        msg["To"] = f"{to_name} <{to_address}>"
+        msg["To"] = formataddr((to_name, to_address))
         msg["From"] = from_addr
         msg["Subject"] = subject
 
@@ -526,6 +571,17 @@ def _parse_address(raw: str) -> dict:
     return {"emailAddress": {"name": name, "address": address}}
 
 
+def _format_addresses(raw: str) -> str:
+    """Normaliza una cabecera de direcciones para ``To``.
+
+    La API devuelve las cabeceras ya decodificadas (``José Núñez <a@b.com>``). Asignar eso tal
+    cual a un ``MIMEText`` codifica la cabecera entera como encoded-word, dirección incluida, y
+    el destinatario deja de ser válido. ``formataddr`` codifica solo el nombre.
+    """
+    addresses = [formataddr(pair) for pair in getaddresses([raw]) if pair[1]]
+    return ", ".join(addresses) or raw
+
+
 def _get_header(headers: list[dict], name: str) -> str:
     """Case-insensitive header lookup."""
     name_lower = name.lower()
@@ -535,6 +591,25 @@ def _get_header(headers: list[dict], name: str) -> str:
     return ""
 
 
+_CHARSET_RE = re.compile(r"charset\s*=\s*\"?([^\";\s]+)", re.IGNORECASE)
+
+
+def _decode_part_data(part: dict) -> str:
+    """Decodifica ``body.data`` con el charset que declara la parte.
+
+    Gmail entrega los bytes de la parte tal cual llegaron (sin el transfer-encoding, pero en
+    su charset original). Decodificar siempre como UTF-8 convertía las tildes de los emails
+    en ISO-8859-1/Windows-1252, aún frecuentes en remitentes españoles, en ``\ufffd``.
+    """
+    raw = base64.urlsafe_b64decode(part["body"]["data"])
+    match = _CHARSET_RE.search(_get_header(part.get("headers", []), "Content-Type"))
+    charset = match.group(1) if match else "utf-8"
+    try:
+        return raw.decode(charset, errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
+
+
 def _decode_body(payload: dict) -> str:
     """Walk the MIME tree and return the best body (HTML preferred, then plain)."""
     # Simple single-part message
@@ -542,8 +617,7 @@ def _decode_body(payload: dict) -> str:
     mime_type = payload.get("mimeType", "")
 
     if body_data and "text/" in mime_type:
-        decoded = base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
-        return decoded
+        return _decode_part_data(payload)
 
     # Multipart — recurse into parts
     parts = payload.get("parts", [])
@@ -554,8 +628,8 @@ def _decode_body(payload: dict) -> str:
         part_mime = part.get("mimeType", "")
         part_data = part.get("body", {}).get("data")
 
-        if part_data:
-            decoded = base64.urlsafe_b64decode(part_data).decode("utf-8", errors="replace")
+        if part_data and not part.get("filename"):
+            decoded = _decode_part_data(part)
             if part_mime == "text/html":
                 html_body = decoded
             elif part_mime == "text/plain" and not plain_body:

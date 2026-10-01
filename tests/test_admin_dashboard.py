@@ -282,3 +282,21 @@ def test_jev_endpoint_rejects_invalid_session_before_fetching(metrics_api):
 
     assert response.status_code == 401
     assert requests == []
+
+
+def test_jev_categories_coincide_con_los_criterios_de_jev():
+    """Una categoría nueva en el YAML (facturas) quedaba fuera de la matriz de confusión."""
+    from gmail_inbox_bot.jev_classifier import load_criteria
+
+    assert set(JEV_CATEGORIES) == set(load_criteria())
+
+
+def test_fecha_invalida_devuelve_422_y_no_llega_a_supabase(metrics_api):
+    client, _rows, requests = metrics_api
+
+    response = client.get(
+        "/admin/api/jev_shadow", params={"date_from": "2026-09-21,created_at.gte.2000-01-01"}
+    )
+
+    assert response.status_code == 422
+    assert requests == []

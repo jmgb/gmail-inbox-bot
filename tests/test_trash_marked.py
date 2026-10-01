@@ -110,3 +110,34 @@ def test_dry_run_never_builds_gmail_client(tmp_path: Path, monkeypatch, capsys):
 
     assert trash_marked.main() == 0
     assert "mensajes marcados=1" in capsys.readouterr().out
+
+
+def test_la_auditoria_se_escribe_mensaje_a_mensaje_y_no_machaca_la_anterior(
+    tmp_path: Path, monkeypatch
+):
+    """Un corte a mitad dejaba mensajes en la papelera sin registro."""
+
+    class Gmail:
+        _http = None
+
+        def __init__(self):
+            self.llamadas = 0
+
+        def delete_email(self, account, message_id):
+            self.llamadas += 1
+            if self.llamadas == 2:
+                raise KeyboardInterrupt
+
+    gmail = Gmail()
+    monkeypatch.setattr(trash_marked, "_build_gmail_client", lambda *a, **k: gmail)
+    results_path = tmp_path / "trash_results.csv"
+    results_path.write_text("fecha,cuenta,message_id,resultado,error\nt,a,previo,trashed,\n")
+    messages = [{"cuenta": "a@b.com", "message_id": f"m{i}", "labels": []} for i in range(3)]
+
+    handle, write = trash_marked.open_results(results_path)
+    with pytest.raises(KeyboardInterrupt):
+        trash_marked.execute_trash(messages, {}, [{"email": "a@b.com"}], on_result=write)
+    handle.close()
+
+    rows = list(csv.DictReader(results_path.open(encoding="utf-8")))
+    assert [r["message_id"] for r in rows] == ["previo", "m0"]

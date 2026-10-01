@@ -30,6 +30,9 @@ def build_poll_query(base_query: str) -> str:
     return query
 
 
+PRE_FILTER_ACTIONS = frozenset({"silent", "tag", "tag_and_move", "delete", "ib_trade"})
+
+
 def apply_pre_filters(
     mail_client, config: dict, email_msg: dict, dry_run: bool
 ) -> tuple[str, str] | None:
@@ -135,11 +138,28 @@ def apply_pre_filters(
     return None
 
 
+_INVISIBLE_BLOCKS = re.compile(
+    r"<!--.*?-->|<(head|style|script|title)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
+_BLOCK_END = re.compile(r"</(?:p|div|tr|li|h[1-6]|table|blockquote)\s*>", re.IGNORECASE)
+
+
 def strip_html(raw: str) -> str:
-    """Convert HTML to plain text using stdlib only."""
-    text = re.sub(r"<br\s*/?>", "\n", raw, flags=re.IGNORECASE)
+    """Convert HTML to plain text using stdlib only.
+
+    El texto resultante es lo que leen los clasificadores, y Jev solo ve los primeros 6000
+    caracteres: el CSS de ``<style>``, los ``<script>``, los comentarios condicionales de
+    Outlook y la indentación de las plantillas de marketing se comían ese presupuesto antes
+    de llegar al contenido. Los cierres de bloque pasan a salto de línea para que dos
+    párrafos no queden pegados en una sola palabra.
+    """
+    text = _INVISIBLE_BLOCKS.sub("", raw)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = _BLOCK_END.sub("\n", text)
     text = re.sub(r"<[^>]+>", "", text)
     text = html_lib.unescape(text)
+    text = re.sub(r"[ \t\u00a0]+", " ", text)
+    text = re.sub(r" ?\n ?", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

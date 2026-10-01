@@ -17,7 +17,9 @@ class MailClient(Protocol):
 
     # --- Read ---
 
-    def get_unread_emails(self, user_email: str, *, top: int = 50) -> list[dict]:
+    def get_unread_emails(
+        self, user_email: str, *, top: int = 50, query: str = "is:unread in:inbox"
+    ) -> list[dict]:
         """Return up to *top* unread messages as normalised dicts.
 
         Each dict must contain at least::
@@ -81,6 +83,20 @@ class MailClient(Protocol):
         force_draft: bool = False,
     ) -> None:
         """Reply (or create draft reply) in the correct thread."""
+        ...
+
+    # --- Send (fresh email, no thread) ---
+
+    def send_email(
+        self,
+        user_email: str,
+        to_address: str,
+        subject: str,
+        html_body: str,
+        *,
+        force_draft: bool = False,
+    ) -> None:
+        """Send a standalone email (or create a draft)."""
         ...
 
     # --- Reply with attachment ---

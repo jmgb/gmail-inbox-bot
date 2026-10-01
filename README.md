@@ -372,7 +372,9 @@ templates: { categoria: { esp: "...", pt: "..." } } # respuestas fijas
 ## OAuth2 y scopes
 
 - App OAuth **External + In production** (proyecto GCP). Tokens permanentes (no expiran).
-- **Scopes**: `gmail.modify` + `calendar.readonly` (+ `documents`, `presentations`, `drive.file`).
+- **Scopes**: `gmail.modify` + `calendar.readonly`. Los tokens generados antes del 2026-10-01
+  llevan además `documents`, `presentations` y `drive.file` (de un cliente de Sheets ya
+  retirado); se van al re-autorizar la cuenta con el script.
 - Google deprecó el flujo OOB → se usa **localhost redirect**: `redirect_uri = http://localhost`;
   el navegador redirige a `http://localhost/?code=XXXX` (no carga, se copia el `code=`).
 - Añadir/renovar una cuenta: `uv run python scripts/get_refresh_token.py` → pega el refresh token en

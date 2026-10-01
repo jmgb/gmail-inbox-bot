@@ -72,19 +72,49 @@ class TestLoadMailboxConfigs:
         assert result[0]["email"] == "bot@test.com"
         assert result[0]["name"] == "mailbox1"  # from filename
 
-    def test_skips_invalid_yaml(self, tmp_path):
-        bad = tmp_path / "bad.yml"
-        bad.write_text(": : invalid", encoding="utf-8")
-        good = tmp_path / "good.yml"
-        good.write_text("email: ok@test.com\n", encoding="utf-8")
-        result = load_mailbox_configs(str(tmp_path))
-        # bad.yml parses to a dict with weird key, but doesn't crash
-        # just ensure at least the good one loads
-        assert any(c.get("email") == "ok@test.com" for c in result)
-
     def test_sorted_by_filename(self, tmp_path):
         (tmp_path / "b_second.yml").write_text("email: b@test.com\n")
         (tmp_path / "a_first.yml").write_text("email: a@test.com\n")
         result = load_mailbox_configs(str(tmp_path))
         assert result[0]["email"] == "a@test.com"
         assert result[1]["email"] == "b@test.com"
+
+
+class TestConfigFallaAlArrancar:
+    """Auditoría 2026-10-01: un YAML roto ya no deja un buzón sin procesar en silencio."""
+
+    def test_yaml_con_error_de_sintaxis_lanza(self, tmp_path):
+        import pytest
+
+        (tmp_path / "roto.yml").write_text("email: a@b.com\nrouting: [sin cerrar\n")
+        with pytest.raises(ValueError, match="roto.yml"):
+            load_mailbox_configs(str(tmp_path))
+
+    def test_yaml_que_no_es_un_mapeo_lanza(self, tmp_path):
+        import pytest
+
+        (tmp_path / "lista.yml").write_text("- a\n- b\n")
+        with pytest.raises(ValueError, match="no es un mapeo"):
+            load_mailbox_configs(str(tmp_path))
+
+    def test_los_yaml_reales_del_repo_son_validos(self):
+        from gmail_inbox_bot.bot import validate_mailbox_config
+
+        configs = load_mailbox_configs("config")
+        assert configs
+        for config in configs:
+            validate_mailbox_config(config)
+
+    def test_accion_desconocida_en_pre_filter_o_routing_lanza(self):
+        import pytest
+
+        from gmail_inbox_bot.bot import validate_mailbox_config
+
+        config = {
+            "name": "x",
+            "email": "x@y.com",
+            "pre_filters": [{"name": "f", "action": "silenciar"}],
+            "routing": {"spam": {"action": "borrar"}},
+        }
+        with pytest.raises(ValueError, match="silenciar.*borrar"):
+            validate_mailbox_config(config)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
@@ -15,10 +17,18 @@ from .telegram_logger import setup_telegram_logging
 
 log = setup_logger("gmail_inbox_bot.app", "logs/app.log")
 
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await start_bot_thread()
+    yield
+
+
 app = FastAPI(
     title="Gmail Inbox Bot",
     docs_url=None,
     redoc_url=None,
+    lifespan=_lifespan,
 )
 
 app.include_router(admin_logs_router)
@@ -91,7 +101,6 @@ def _run_reminder_scheduler() -> None:
         log.exception("Calendar reminder scheduler thread crashed")
 
 
-@app.on_event("startup")
 async def start_bot_thread() -> None:
     """Start the polling bot and reminder scheduler as daemon threads."""
     global _bot_thread, _reminder_thread

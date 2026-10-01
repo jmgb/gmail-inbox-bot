@@ -14,13 +14,13 @@ from pathlib import Path
 
 import httpx2
 
+# Solo lo que usa el código (CLAUDE.md: no ampliar sin razón concreta). Docs, Slides y Drive
+# se pidieron para un SheetsClient que ya no existe: con ellos, un refresh token filtrado
+# daba también escritura sobre los documentos de la cuenta.
 SCOPE = " ".join(
     [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/calendar.readonly",
-        "https://www.googleapis.com/auth/documents",
-        "https://www.googleapis.com/auth/presentations",
-        "https://www.googleapis.com/auth/drive.file",
     ]
 )
 REDIRECT_URI = "http://localhost"

@@ -1,6 +1,6 @@
 """Tests for calendar_reminders — filtering, recipients and dedupe keys."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
@@ -584,3 +584,71 @@ class TestRunOnce:
         first_key = dedupe_key(first, "ana@example.com", DAY, "Europe/Madrid")
         assert reloaded.already_sent(first_key) is True
         assert reloaded.ran_today("jesus82c", DAY) is False
+
+
+# ------------------------------------------------------------------
+# Gaps cerrados en la auditoría del 2026-10-01
+# ------------------------------------------------------------------
+
+
+class TestReunionesYaEmpezadas:
+    def test_no_recuerda_una_reunion_que_ya_empezo(self):
+        """A las 09:16 (o en un reintento por la tarde) no se recuerda la reunión de las 08:30."""
+        gmail = MagicMock()
+        cal = MagicMock()
+        cal.list_events_for_day.return_value = [
+            _ev(id="manana", start=datetime(2026, 6, 26, 8, 30, tzinfo=MADRID)),
+            _ev(
+                id="tarde", ical_uid="uid-tarde", start=datetime(2026, 6, 26, 16, 0, tzinfo=MADRID)
+            ),
+        ]
+        state = ReminderState.load_data({})
+        now = datetime(2026, 6, 26, 9, 16, tzinfo=MADRID)
+
+        results = process_mailbox(gmail, cal, CONFIG, state, day=DAY, sent_at="t", now=now)
+
+        assert gmail.send_email.call_count == 1
+        assert {r["event"]: r["status"] for r in results} == {"manana": "started", "tarde": "sent"}
+
+
+class TestSchedulerReintentos:
+    def test_reintenta_con_pausa_limite_y_un_solo_aviso_inicial(self, monkeypatch):
+        """Un fallo persistente se reintentaba cada minuto con un aviso de Telegram cada vez."""
+        import threading
+
+        import gmail_inbox_bot.calendar_reminders as cr
+
+        minutos = [20, 21, 36, 52, 53, 68, 90, 120]
+        inicio = datetime(2026, 6, 26, 9, 0, tzinfo=MADRID)
+        relojes = iter(inicio + timedelta(minutes=m) for m in minutos)
+        stop = threading.Event()
+
+        class Reloj(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                try:
+                    return next(relojes)
+                except StopIteration:
+                    stop.set()
+                    return datetime(2026, 6, 26, 12, 0, tzinfo=MADRID)
+
+        intentos, avisos = [], []
+        monkeypatch.setattr(cr, "datetime", Reloj)
+        monkeypatch.setattr(cr, "load_env", lambda: {})
+        monkeypatch.setattr(cr, "load_mailbox_configs", lambda: [])
+        monkeypatch.setattr(
+            cr, "_build_clients", lambda env, configs: [(MagicMock(), MagicMock(), CONFIG)]
+        )
+        monkeypatch.setattr(
+            cr.ReminderState, "load", lambda path, strict=True: cr.ReminderState.load_data({})
+        )
+        monkeypatch.setattr(cr, "run_once", lambda **kw: intentos.append(kw))
+        monkeypatch.setattr(cr, "notify_reminder_failure", lambda **kw: avisos.append(kw))
+
+        cr.run_scheduler(dry_run=False, poll_seconds=0, stop=stop)
+
+        horas = [kw["now"].strftime("%H:%M") for kw in intentos]
+        assert horas == ["09:20", "09:36", "09:52", "10:08"]
+        assert [kw["notify_failures"] for kw in intentos] == [True, False, False, False]
+        assert len(avisos) == 1
+        assert "4 intentos" in avisos[0]["detail"]

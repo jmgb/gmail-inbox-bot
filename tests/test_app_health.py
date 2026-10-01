@@ -73,3 +73,31 @@ def test_ok_en_modo_solo_admin(monkeypatch):
 
     assert payload["status"] == "ok"
     assert payload["threads"] == {"bot": "disabled", "calendar_reminders": "disabled"}
+
+
+def test_el_arranque_de_la_app_lanza_los_dos_threads(monkeypatch):
+    """Tras migrar de on_event (deprecado) a lifespan, el arranque sigue lanzando el trabajo."""
+    import threading
+
+    from fastapi.testclient import TestClient
+
+    arrancados = []
+    hecho = threading.Event()
+
+    def registrar(nombre):
+        def run():
+            arrancados.append(nombre)
+            if len(arrancados) == 2:
+                hecho.set()
+
+        return run
+
+    monkeypatch.setattr(app_module, "_run_bot_in_thread", registrar("bot"))
+    monkeypatch.setattr(app_module, "_run_reminder_scheduler", registrar("calendar"))
+    sleep_original = asyncio.sleep
+    monkeypatch.setattr(app_module.asyncio, "sleep", lambda _s: sleep_original(0))
+
+    with TestClient(app_module.app):
+        assert hecho.wait(5)
+
+    assert sorted(arrancados) == ["bot", "calendar"]

@@ -87,7 +87,10 @@ def migrate_archive(output_dir: Path, manifest: Manifest) -> None:
 
     manifest.db.commit()
     for source, target in moves:
-        if _inside(output_dir, source) and source.exists() and source != target:
+        # samefile y no `!=`: "./x", un symlink o /mnt/c (sin distinguir mayúsculas) pueden
+        # nombrar el mismo fichero con rutas distintas, y borrar la "fuente" sería borrar la
+        # única copia.
+        if _inside(output_dir, source) and source.exists() and not source.samefile(target):
             source.unlink()
 
 

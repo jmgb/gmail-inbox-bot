@@ -469,3 +469,55 @@ class TestProcessMailbox:
         recorded = mock_record.call_args.kwargs
         assert recorded["category"] == "personal"
         assert recorded["jev_category"] == "personal"
+
+
+class TestProcessEmailGaps:
+    """Gaps cerrados en la auditoría del 2026-10-01."""
+
+    _JEV_OK = {
+        "jev_category": "compras",
+        "jev_confidence": 0.95,
+        "jev_probabilities": {"compras": 0.95},
+        "jev_latency_ms": 300,
+        "jev_model": "jev-1.13.0",
+    }
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="moved")
+    def test_jev_decide_aunque_no_haya_claves_llm(
+        self, mock_execute, _mock_record, mock_gmail, config
+    ):
+        """Sin OPENAI/GROQ el bot mandaba todo a ERROR IA aunque Jev, el principal, funcionara."""
+        jev = MagicMock()
+        jev.classify.return_value = dict(self._JEV_OK)
+
+        result = _process_email(mock_gmail, None, config, _make_email(), jev=jev)
+
+        assert result == "moved"
+        assert mock_execute.call_args.args[3]["categoria"] == "compras"
+        mock_gmail.update_email.assert_not_called()
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="moved")
+    def test_jev_recibe_el_asunto_completo(self, _mock_execute, mock_record, mock_gmail, config):
+        jev = MagicMock()
+        jev.classify.return_value = dict(self._JEV_OK)
+        asunto = "Tu pedido " + "x" * 120 + " ha sido enviado"
+
+        _process_email(mock_gmail, None, config, _make_email(subject=asunto), jev=jev)
+
+        assert jev.classify.call_args.kwargs["subject"] == asunto
+        assert len(mock_record.call_args.kwargs["subject"]) == 80
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    def test_dry_run_no_etiqueta_error_ia(self, _mock_record, mock_gmail, config):
+        result = _process_email(mock_gmail, None, config, _make_email(), dry_run=True)
+
+        assert "ERROR IA" in result
+        mock_gmail.update_email.assert_not_called()
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    def test_registra_la_fecha_de_recepcion(self, mock_record, mock_gmail, config):
+        _process_email(mock_gmail, None, config, _make_email())
+
+        assert mock_record.call_args.kwargs["received_at"] == "2026-03-12T10:00:00Z"

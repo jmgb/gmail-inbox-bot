@@ -8,7 +8,7 @@ import time
 from llm_gateway import LLMGateway
 from llm_gateway.factories import build_registry, create_groq_client, create_openai_client
 
-from .actions import already_processed, execute
+from .actions import ROUTING_ACTIONS, already_processed, execute
 from .classifier import DEFAULT_MODEL, classify_email, load_prompt
 from .config import load_env, load_mailbox_configs
 from .gmail_client import GmailClient
@@ -16,6 +16,7 @@ from .jev_classifier import JevClassifier, build_jev_classifier, classification_
 from .llm_gateway_client import SynchronousLLMGateway
 from .logger import setup_logger
 from .mail_processing import (
+    PRE_FILTER_ACTIONS,
     _is_forwarded_email,
     apply_pre_filters,
     build_poll_query,
@@ -49,6 +50,29 @@ class _LoggingAlertSink:
             fields.get("failure_phase"),
             fields.get("failures"),
         )
+
+
+def validate_mailbox_config(config: dict) -> None:
+    """Falla al arrancar si el YAML de un buzón no se puede ejecutar tal cual.
+
+    Una acción mal escrita en ``pre_filters`` se saltaba en silencio (el email seguía al
+    clasificador sin el filtro) y una de ``routing`` acababa en ``PENDIENTE GESTIONAR``
+    email a email. Ambas son errores de despliegue: mejor verlos al arrancar.
+    """
+    name = config.get("name", "?")
+    problems: list[str] = []
+    if not config.get("email"):
+        problems.append("falta 'email'")
+    for pre_filter in config.get("pre_filters") or []:
+        action = pre_filter.get("action", "silent")
+        if action not in PRE_FILTER_ACTIONS:
+            problems.append(f"pre_filter '{pre_filter.get('name', '?')}': acción '{action}'")
+    for categoria, rule in (config.get("routing") or {}).items():
+        action = (rule or {}).get("action", "tag")
+        if action not in ROUTING_ACTIONS:
+            problems.append(f"routing '{categoria}': acción '{action}'")
+    if problems:
+        raise ValueError(f"Config del buzón '{name}' inválida: " + "; ".join(problems))
 
 
 def _build_gmail_client(
@@ -123,6 +147,14 @@ def _enrich_forwarded(email_msg: dict, config: dict) -> None:
         email_msg["_forward_extraction_failed"] = True
 
 
+def _tag_error_ia(gmail: GmailClient, user_email: str, msg_id: str, *, dry_run: bool) -> None:
+    """Deja el email sin leer en el inbox con ``ERROR IA``; en dry-run no toca el buzón."""
+    if dry_run:
+        log.info("[%s] [DRY-RUN] se etiquetaría ERROR IA", msg_id)
+        return
+    gmail.update_email(user_email, msg_id, is_read=False, add_categories=["ERROR IA"])
+
+
 def _process_email(
     gmail: GmailClient,
     openai_client: SynchronousLLMGateway | None,
@@ -134,8 +166,11 @@ def _process_email(
 ) -> str:
     """Process a single email through the full pipeline. Returns status string."""
     msg_id = email_msg["id"]
-    subject = email_msg.get("subject", "")[:80]
+    # El asunto completo va a los clasificadores; el recortado, solo a logs y métricas.
+    full_subject = email_msg.get("subject") or ""
+    subject = full_subject[:80]
     sender = email_msg.get("from", {}).get("emailAddress", {}).get("address", "?")
+    received_at = email_msg.get("receivedDateTime") or None
 
     # 1. Idempotency check
     if already_processed(email_msg):
@@ -155,6 +190,7 @@ def _process_email(
             msg_id=msg_id,
             sender=sender,
             subject=subject,
+            received_at=received_at,
         )
         return pre_result
 
@@ -163,60 +199,36 @@ def _process_email(
 
     # 4. Classify
     model = config.get("classifier", {}).get("model", "") or DEFAULT_MODEL
-    if not _has_llm_client(openai_client):
-        log.warning("[%s] No LLM client available — tagging ERROR IA", msg_id)
-        gmail.update_email(
-            config["email"],
-            msg_id,
-            is_read=False,
-            add_categories=["ERROR IA"],
-        )
-        record_email(
-            mailbox=mailbox_name,
-            category="error_no_classifier",
-            action="tag:ERROR IA",
-            msg_id=msg_id,
-            error=True,
-            sender=sender,
-            subject=subject,
-        )
-        return "no classifier available — tagged ERROR IA"
-
     body_html = email_msg.get("body", {}).get("content", "")
     body_text = strip_html(body_html)
     sender_name = email_msg.get("from", {}).get("emailAddress", {}).get("name", "")
     has_attachments = email_msg.get("hasAttachments", False)
 
-    prompt_file = config.get("classifier", {}).get("prompt_file", "")
-    if not prompt_file:
-        log.error("[%s] No classifier.prompt_file in config", msg_id)
-        gmail.update_email(
-            config["email"],
-            msg_id,
-            is_read=False,
-            add_categories=["ERROR IA"],
-        )
+    def fail(category: str, result: str, **extra) -> str:
+        _tag_error_ia(gmail, config["email"], msg_id, dry_run=dry_run)
         record_email(
             mailbox=mailbox_name,
-            category="error_no_prompt",
+            category=category,
             action="tag:ERROR IA",
             msg_id=msg_id,
             error=True,
             sender=sender,
             subject=subject,
+            received_at=received_at,
+            **extra,
         )
-        return "error — no prompt_file configured, tagged ERROR IA"
-
-    system_prompt = load_prompt(prompt_file)
+        return result
 
     # Jev decide; la cadena LLM (gpt-oss-120b -> gpt-6-luna) es el fallback ante un error
     # de Jev. Sin JEV_API_KEY, build_jev_classifier() devuelve None y decide el LLM como antes:
-    # vaciar esa variable es el camino de vuelta, sin tocar código.
+    # vaciar esa variable es el camino de vuelta, sin tocar código. Los requisitos del LLM
+    # (cliente y prompt) solo se exigen si de verdad hace falta el LLM: sin claves de
+    # OpenAI/Groq, Jev sigue decidiendo en vez de mandar todo el inbox a ERROR IA.
     jev_result: dict = {}
     classification: dict | None = None
     if jev is not None:
         jev_result = jev.classify(
-            subject=subject,
+            subject=full_subject,
             body_text=body_text,
             sender_name=sender_name,
             sender_address=sender,
@@ -239,10 +251,25 @@ def _process_email(
             )
 
     if classification is None:
+        if not _has_llm_client(openai_client):
+            log.warning("[%s] No LLM client available — tagging ERROR IA", msg_id)
+            return fail(
+                "error_no_classifier", "no classifier available — tagged ERROR IA", **jev_result
+            )
+
+        prompt_file = config.get("classifier", {}).get("prompt_file", "")
+        if not prompt_file:
+            log.error("[%s] No classifier.prompt_file in config", msg_id)
+            return fail(
+                "error_no_prompt",
+                "error — no prompt_file configured, tagged ERROR IA",
+                **jev_result,
+            )
+
         classification = classify_email(
             openai_client,
-            system_prompt,
-            subject,
+            load_prompt(prompt_file),
+            full_subject,
             body_text,
             sender_name,
             sender,
@@ -252,19 +279,12 @@ def _process_email(
 
     if not classification:
         log.error("[%s] Classification failed — De: %s | Asunto: %s", msg_id, sender, subject)
-        gmail.update_email(config["email"], msg_id, is_read=False, add_categories=["ERROR IA"])
-        record_email(
-            mailbox=mailbox_name,
-            category="error_clasificacion",
-            action="tag:ERROR IA",
-            msg_id=msg_id,
+        return fail(
+            "error_clasificacion",
+            "classification failed — tagged ERROR IA",
             model=model,
-            error=True,
-            sender=sender,
-            subject=subject,
             **jev_result,
         )
-        return "classification failed — tagged ERROR IA"
 
     categoria = classification.get("categoria", "")
 
@@ -309,6 +329,7 @@ def _process_email(
         classification_reason=classification.get("razon_clasificacion"),
         sender=sender,
         subject=subject,
+        received_at=received_at,
         input_tokens=usage.get("input_tokens"),
         output_tokens=usage.get("output_tokens"),
         total_tokens=usage.get("total_tokens"),
@@ -359,7 +380,7 @@ def process_mailbox(
             msg_id = email_msg.get("id", "?")
             log.exception("Unhandled error processing email %s", msg_id)
             try:
-                gmail.update_email(user_email, msg_id, is_read=False, add_categories=["ERROR IA"])
+                _tag_error_ia(gmail, user_email, msg_id, dry_run=dry_run)
             except Exception:
                 log.exception("Failed to tag ERROR IA on %s", msg_id)
             record_email(
@@ -368,7 +389,8 @@ def process_mailbox(
                 msg_id=msg_id,
                 error=True,
                 sender=email_msg.get("from", {}).get("emailAddress", {}).get("address"),
-                subject=email_msg.get("subject", "")[:80],
+                subject=(email_msg.get("subject") or "")[:80],
+                received_at=email_msg.get("receivedDateTime") or None,
             )
             results.append(f"error — unhandled exception on {msg_id}")
 
@@ -393,6 +415,8 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
 
     if not configs:
         raise RuntimeError("No mailbox configs found in config/ directory")
+    for config in configs:
+        validate_mailbox_config(config)
 
     # Use the shortest poll interval across all configs
     poll_interval = min(c.get("poll_interval_seconds", 600) for c in configs)

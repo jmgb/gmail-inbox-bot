@@ -78,3 +78,30 @@ def test_variable_vacia_equivale_a_no_definida(monkeypatch, conexiones):
 def test_el_modulo_sigue_importando_socket_unix_de_verdad():
     """Guarda contra un refactor que deje el fixture mintiendo."""
     assert admin_logs.socket is socket_module
+
+
+def test_estado_del_contenedor_por_la_api_y_no_por_el_cli(monkeypatch):
+    """La imagen no trae el CLI de docker: el estado se lee de /containers/<c>/json."""
+    import asyncio
+
+    pedidos = []
+
+    def fake_get(path, timeout=15):
+        pedidos.append(path)
+        return b'{"State": {"Status": "running"}}'
+
+    monkeypatch.setattr(admin_logs, "_docker_api_get", fake_get)
+
+    assert asyncio.run(admin_logs._docker_container_status("gmail-inbox-bot")) == "running"
+    assert pedidos == ["/containers/gmail-inbox-bot/json"]
+
+
+def test_contenedor_inexistente_es_not_found(monkeypatch):
+    import asyncio
+
+    def fake_get(path, timeout=15):
+        raise RuntimeError("Docker API 404: no such container")
+
+    monkeypatch.setattr(admin_logs, "_docker_api_get", fake_get)
+
+    assert asyncio.run(admin_logs._docker_container_status("x")) == "not_found"

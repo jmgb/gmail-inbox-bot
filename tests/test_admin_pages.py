@@ -25,3 +25,23 @@ def test_logs_page_renders(monkeypatch):
     resp = _client(monkeypatch).get("/admin/logs")
     assert resp.status_code == 200
     assert "<html" in resp.text.lower()
+
+
+def test_login_con_caracteres_no_ascii_no_da_500(monkeypatch):
+    import gmail_inbox_bot.admin_logs as admin_logs
+
+    monkeypatch.setattr(admin_logs, "_failed_logins", admin_logs.deque())
+    resp = _client(monkeypatch).post("/admin/logs", data={"password": "contraseña"})
+    assert resp.status_code == 401
+
+
+def test_login_se_bloquea_tras_demasiados_fallos(monkeypatch):
+    import gmail_inbox_bot.admin_logs as admin_logs
+
+    monkeypatch.setattr(admin_logs, "_failed_logins", admin_logs.deque())
+    client = _client(monkeypatch)
+    for _ in range(admin_logs._MAX_FAILED_LOGINS):
+        assert client.post("/admin/logs", data={"password": "mal"}).status_code == 401
+
+    # Ni siquiera la contraseña buena entra hasta que pase la ventana.
+    assert client.post("/admin/logs", data={"password": "secret"}).status_code == 429

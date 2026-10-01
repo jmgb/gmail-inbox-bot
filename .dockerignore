@@ -1,0 +1,18 @@
+# Sin esto, `COPY . .` metía en las capas de la imagen el .env (todos los secretos), los
+# logs, el archivo local de emails y .git, y en local pisaba el .venv de la imagen.
+.env
+.env.*
+*.credentials.json
+client_secret_*.json
+token.json
+SUPABASE_ACCOUNTS.md
+logs/
+attachments_dump/
+.git/
+.github/
+.githooks/
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+tests/

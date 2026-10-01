@@ -56,6 +56,33 @@ def _handler_targets_path(handler: logging.Handler, path: str) -> bool:
     return os.path.abspath(handler.baseFilename) == os.path.abspath(path)
 
 
+# Un único RotatingFileHandler por (fichero, nivel). Cada módulo llama a setup_logger con
+# "logs/app.log": con un handler por logger había once ficheros abiertos sobre el mismo path y,
+# al rotar uno, los demás seguían escribiendo en el app.log.1 renombrado (y se pisaban las
+# rotaciones entre sí), así que el visor dejaba de ver los logs recientes.
+_FILE_HANDLERS: dict[tuple[str, int], RotatingFileHandler] = {}
+
+
+def _shared_file_handler(
+    path: str, level: int, formatter: logging.Formatter
+) -> RotatingFileHandler:
+    key = (os.path.abspath(path), level)
+    handler = _FILE_HANDLERS.get(key)
+    if handler is None:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        # RotatingFileHandler: 5 MB por fichero, 5 backups
+        handler = RotatingFileHandler(
+            path,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        _FILE_HANDLERS[key] = handler
+    return handler
+
+
 def _resolve_log_level(default: int = logging.INFO) -> int:
     """Traduce ``LOG_LEVEL`` a un nivel de logging; un valor no reconocido cae a *default*."""
     raw = os.environ.get("LOG_LEVEL", "").strip().upper()
@@ -100,32 +127,13 @@ def setup_logger(
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    # Asegurar carpeta
-    os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
-    # RotatingFileHandler: 5 MB por fichero, 5 backups
-    fh = RotatingFileHandler(
-        log_file,
-        maxBytes=5 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    fh.setLevel(level_file)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+    logger.addHandler(_shared_file_handler(log_file, level_file, formatter))
 
     if mirror_to_app_log:
         app_log_path = "logs/app.log"
         if os.path.abspath(log_file) != os.path.abspath(app_log_path):
             if not any(_handler_targets_path(handler, app_log_path) for handler in logger.handlers):
-                app_fh = RotatingFileHandler(
-                    app_log_path,
-                    maxBytes=5 * 1024 * 1024,
-                    backupCount=5,
-                    encoding="utf-8",
-                )
-                app_fh.setLevel(level_file)
-                app_fh.setFormatter(formatter)
-                logger.addHandler(app_fh)
+                logger.addHandler(_shared_file_handler(app_log_path, level_file, formatter))
 
     logger.setLevel(logging.DEBUG)  # Dejar que handlers filtren
 

@@ -201,6 +201,13 @@ class TestClassifyEmail:
         assert result["categoria"] == "finanzas"
         assert result["razon_clasificacion"] == ""
 
+    def test_categoria_se_normaliza_a_la_clave_de_routing(self):
+        client = _classification_client('{"categoria":" Finanzas ","razon_clasificacion":"x"}')
+
+        result = classify_email(client, "p", "Recibo", "body", "Banco", "a@banco.es", False)
+
+        assert result["categoria"] == "finanzas"
+
     def test_placeholder_reason_field_name_is_sanitized(self):
         client = _classification_client(
             '{"categoria":"personal","razon_clasificacion":"razon_clasificacion"}'

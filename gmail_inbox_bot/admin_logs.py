@@ -11,10 +11,12 @@ import asyncio
 import hashlib
 import hmac
 import http.client
+import json
 import os
 import secrets
 import socket
 import time
+from collections import deque
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -113,6 +115,25 @@ def _require_logs_password(request: Request) -> bool:
     return bool(cookie and _validate_session_cookie(cookie, password))
 
 
+# Freno a la fuerza bruta del login, que está expuesto en internet. Es global y no por IP:
+# detrás del proxy la IP de origen no es fiable y solo hay un usuario. El coste aceptado es
+# que un atacante puede bloquear el acceso del dueño durante la ventana.
+_MAX_FAILED_LOGINS = 10
+_FAILED_LOGIN_WINDOW = 15 * 60
+_failed_logins: deque[float] = deque()
+
+
+def _login_locked(now: float) -> bool:
+    while _failed_logins and now - _failed_logins[0] > _FAILED_LOGIN_WINDOW:
+        _failed_logins.popleft()
+    return len(_failed_logins) >= _MAX_FAILED_LOGINS
+
+
+def _password_matches(candidate: str, expected: str) -> bool:
+    # En bytes: compare_digest con str no ASCII lanza TypeError (un 500 por teclear una "ñ").
+    return secrets.compare_digest(candidate.encode(), expected.encode())
+
+
 def _is_development() -> bool:
     return os.getenv("ENVIRONMENT", "production").lower() in ("development", "dev")
 
@@ -165,7 +186,7 @@ async def _read_docker_logs(container: str, lines: int = 500) -> str:
             f"/containers/{quote(container, safe='')}/logs"
             f"?stdout=1&stderr=1&tail={lines}&timestamps=1"
         )
-        raw = await asyncio.get_event_loop().run_in_executor(None, _docker_api_get, path)
+        raw = await asyncio.get_running_loop().run_in_executor(None, _docker_api_get, path)
         decoded_lines: list[str] = []
         offset = 0
         while offset + 8 <= len(raw):
@@ -185,6 +206,22 @@ async def _read_docker_logs(container: str, lines: int = 500) -> str:
     except Exception as exc:
         logger.error("_read_docker_logs(%s): %s", container, exc)
         return f"Error reading docker logs: {exc}\n"
+
+
+async def _docker_container_status(container: str) -> str:
+    """Estado del contenedor por el Docker Engine API (el socket-proxy permite ``/json``).
+
+    Antes se lanzaba ``docker inspect``, pero la imagen no trae el CLI de Docker: el estado
+    salía siempre ``unknown``.
+    """
+    path = f"/containers/{quote(container, safe='')}/json"
+    try:
+        raw = await asyncio.get_running_loop().run_in_executor(None, _docker_api_get, path, 5)
+        return json.loads(raw).get("State", {}).get("Status") or "unknown"
+    except RuntimeError as exc:
+        return "not_found" if "Docker API 404" in str(exc) else "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _resolve_file_path(log_name: str) -> str | None:
@@ -277,7 +314,11 @@ async def logs_viewer_login(password: str = Form(...)) -> HTMLResponse | Redirec
     if not expected_password:
         raise HTTPException(status_code=404)
 
-    if secrets.compare_digest(password, expected_password):
+    now = time.time()
+    if _login_locked(now):
+        raise HTTPException(status_code=429, detail="Demasiados intentos; espera unos minutos")
+
+    if _password_matches(password, expected_password):
         response = RedirectResponse(url="/admin/dashboard", status_code=302)
         cookie_value = _make_session_cookie(expected_password)
         response.set_cookie(
@@ -290,6 +331,7 @@ async def logs_viewer_login(password: str = Form(...)) -> HTMLResponse | Redirec
         )
         return response
 
+    _failed_logins.append(now)
     return HTMLResponse(
         LOGIN_HTML.replace("{error}", '<p class="error">Password incorrecto</p>'),
         status_code=401,
@@ -344,20 +386,7 @@ async def list_logs(request: Request) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
     for name, container in DOCKER_CONTAINERS.items():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "docker",
-                "inspect",
-                "--format",
-                "{{.State.Status}}",
-                container,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            status = stdout.decode().strip() if proc.returncode == 0 else "not_found"
-        except Exception:
-            status = "unknown"
+        status = await _docker_container_status(container)
         result[name] = {
             "type": "docker",
             "container": container,

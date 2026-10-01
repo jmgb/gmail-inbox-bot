@@ -724,7 +724,7 @@
       }
 
       function mailboxLabel(key) {
-        return MAILBOX_LABELS[key] || key;
+        return MAILBOX_LABELS[key] || escapeHtml(key);
       }
 
       function mailboxIcon(key) {
@@ -893,7 +893,7 @@
               <tr>
                 <td>
                   <div class="cat-name-cell">
-                    <div>${item.category}</div>
+                    <div>${escapeHtml(item.category)}</div>
                     <div class="progress-bar-bg">
                       <div class="progress-bar-fill" style="width: ${pct}%"></div>
                     </div>

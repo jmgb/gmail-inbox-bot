@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import traceback
 
-from .telegram import enviar_mensaje_telegram, escapar_caracteres
+from .telegram import enviar_mensaje_telegram
 
 
 class TelegramHandler(logging.Handler):
@@ -25,7 +25,9 @@ class TelegramHandler(logging.Handler):
 
             module = record.name if record.name != "__main__" else "gmail_inbox_bot"
             func = record.funcName if record.funcName != "<module>" else ""
-            text = escapar_caracteres(record.getMessage())
+            # Sin escapar aquí: enviar_mensaje_telegram ya escapa el texto entero. Escapar dos
+            # veces convertía "De: Foo <a@b.com>" en "&lt;a@b.com&gt;" literal en el aviso.
+            text = record.getMessage()
             emoji = "\U0001f6a8" if record.levelno == logging.ERROR else "\U0001f4a5"
 
             if func:
@@ -35,9 +37,9 @@ class TelegramHandler(logging.Handler):
 
             if record.exc_info and record.exc_info[1]:
                 exc_type = type(record.exc_info[1]).__name__
-                exc_msg = escapar_caracteres(str(record.exc_info[1]))
+                exc_msg = str(record.exc_info[1])
                 tb_lines = traceback.format_tb(record.exc_info[2])
-                tb_short = escapar_caracteres("".join(tb_lines[-3:]).strip())
+                tb_short = "".join(tb_lines[-3:]).strip()
                 msg += f"\n\n<b>Exception:</b> {exc_type}: {exc_msg}"
                 if tb_short:
                     msg += f"\n<pre>{tb_short}</pre>"

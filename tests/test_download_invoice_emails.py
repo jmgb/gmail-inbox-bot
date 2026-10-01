@@ -237,3 +237,24 @@ def test_write_or_clear_csv_removes_stale_report_when_rerun_is_empty(tmp_path: P
     assert "vieja" in path.read_text(encoding="utf-8-sig")
     write_or_clear_csv(path, [], ["subject"])
     assert not path.exists()
+
+
+def test_un_fallo_a_mitad_no_deja_temporales_en_la_carpeta(tmp_path: Path, monkeypatch):
+    import scripts.download_invoice_emails as script
+
+    def falla(**_kwargs):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(script, "pdf_filename", falla)
+    gmail = FakeGmail({"aaaa1111": (_raw("Tu factura de agosto", "factura.pdf"), ["INBOX"])})
+
+    result = process_account(
+        gmail=gmail,
+        mailbox={"name": "jesus82c", "email": "jesus82c@gmail.com"},
+        month="2026-08",
+        dest=tmp_path,
+        force=False,
+    )
+
+    assert len(result["errors"]) == 1
+    assert list(tmp_path.glob(".tmp_extract_*")) == []

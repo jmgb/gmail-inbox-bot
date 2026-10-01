@@ -147,7 +147,10 @@ def classify_email(
         response = client.generate(request)
         _log_fallback_if_used(response, source="classify_email")
         result = dict(response.output)
-        categoria = result.get("categoria", "")
+        # Las claves de routing van en minúsculas: un "Finanzas" o " spam" del modelo no
+        # encontraba regla y acababa en PENDIENTE GESTIONAR.
+        categoria = str(result.get("categoria") or "").strip().lower()
+        result["categoria"] = categoria
         razon = _sanitize_reason(result.get("razon_clasificacion", ""))
         result["razon_clasificacion"] = razon
         result["model_used"] = response.execution.model_used

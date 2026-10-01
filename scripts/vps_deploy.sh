@@ -18,14 +18,25 @@ fi
 PROJECT_DIR="/home/ubuntu/services/gmail-inbox-bot"
 COMPOSE_FILE="docker-compose.production.yml"
 CONTAINER_NAME="gmail-inbox-bot"
-HEALTH_URL=""  # No HTTP health endpoint — bot uses polling, not a web server
+# /health devuelve 503 si el thread del bot o el del scheduler han muerto (ver app.py).
+HEALTH_URL="http://127.0.0.1:8007/health"
 SERVICE_NAME="gmail-inbox-bot"
+# La imagen que corría antes del deploy, etiquetada para poder volver a ella: sin etiqueta,
+# el `docker image prune` del final la borraba y no había a qué volver.
+ROLLBACK_TAG="${SERVICE_NAME}:rollback"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 COMPOSE_IMAGE_DASHED="${PROJECT_NAME}-${SERVICE_NAME}:latest"
 COMPOSE_IMAGE_UNDERSCORE="${PROJECT_NAME}_${SERVICE_NAME}:latest"
 
 DEPLOY_IMAGE_REF="${DEPLOY_IMAGE_REF:-}"
 DEPLOY_ALLOW_FALLBACK="${DEPLOY_ALLOW_FALLBACK:-true}"
+# Commit que corría antes de este deploy (lo pasa el workflow antes del git merge). El
+# rollback vuelve a él: config/ va montado desde este checkout, así que revertir solo la
+# imagen dejaría la config nueva con el código viejo.
+# Sin variable (deploy a mano, que hace el git pull antes), se usa el último commit que quedó
+# sano, guardado al final de cada deploy correcto.
+LAST_DEPLOYED_FILE="$PROJECT_DIR/logs/.last_deployed_sha"
+DEPLOY_PREVIOUS_SHA="${DEPLOY_PREVIOUS_SHA:-$(cat "$LAST_DEPLOYED_FILE" 2>/dev/null || true)}"
 
 print_header() { echo "==> $1"; }
 
@@ -72,9 +83,41 @@ print_runtime_status() {
   echo
 }
 
+save_rollback_image() {
+  local previous
+  previous="$(docker inspect --format='{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+  if [ -n "$previous" ]; then
+    docker tag "$previous" "$ROLLBACK_TAG"
+    echo "Imagen anterior guardada como $ROLLBACK_TAG"
+  fi
+}
+
+rollback() {
+  if ! docker image inspect "$ROLLBACK_TAG" > /dev/null 2>&1; then
+    echo "No hay imagen anterior a la que volver"
+    return 1
+  fi
+  print_header "Rollback a la imagen anterior ($ROLLBACK_TAG)"
+  if [ -n "$DEPLOY_PREVIOUS_SHA" ] && [ "$(git rev-parse HEAD)" != "$DEPLOY_PREVIOUS_SHA" ]; then
+    # --keep aborta si hubiera cambios locales que perder; el siguiente deploy vuelve a
+    # avanzar con git merge --ff-only.
+    git reset --keep "$DEPLOY_PREVIOUS_SHA" || echo "No se pudo volver el checkout a $DEPLOY_PREVIOUS_SHA"
+  fi
+  docker tag "$ROLLBACK_TAG" "$COMPOSE_IMAGE_DASHED" || return 1
+  docker tag "$ROLLBACK_TAG" "$COMPOSE_IMAGE_UNDERSCORE" || return 1
+  docker compose -f "$COMPOSE_FILE" up -d --no-build || return 1
+  wait_for_health
+}
+
+fail_with_rollback() {
+  echo "$1"
+  rollback || echo "ROLLBACK FALLIDO: el servicio puede estar caído, revisar a mano"
+  exit 1
+}
+
 deploy_legacy_build() {
   print_header "Deploy legacy (build en VPS)"
-  docker compose -f "$COMPOSE_FILE" up -d --build
+  docker compose -f "$COMPOSE_FILE" up -d --build || return 1
   wait_for_health
 }
 
@@ -87,7 +130,9 @@ deploy_immutable_image() {
   if [[ "$DEPLOY_IMAGE_REF" == ghcr.io/* ]] && [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
     echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
   fi
-  docker pull "$DEPLOY_IMAGE_REF" || return 1
+  # 2 = la imagen no se pudo descargar (solo ahí tiene sentido construir en el VPS);
+  # 1 = la imagen se descargó pero no arranca sana: reconstruir el mismo código no lo arregla.
+  docker pull "$DEPLOY_IMAGE_REF" || return 2
   docker tag "$DEPLOY_IMAGE_REF" "$COMPOSE_IMAGE_DASHED" || return 1
   docker tag "$DEPLOY_IMAGE_REF" "$COMPOSE_IMAGE_UNDERSCORE" || return 1
   docker compose -f "$COMPOSE_FILE" up -d --no-build || return 1
@@ -97,26 +142,29 @@ deploy_immutable_image() {
 print_header "Iniciando deploy de $CONTAINER_NAME"
 cd "$PROJECT_DIR"
 
+save_rollback_image
+
 if [ -n "$DEPLOY_IMAGE_REF" ]; then
-  if deploy_immutable_image; then
+  rc=0
+  deploy_immutable_image || rc=$?
+  if [ "$rc" -eq 0 ]; then
     print_header "Deploy inmutable completado"
+  elif [ "$rc" -eq 2 ] && [ "$DEPLOY_ALLOW_FALLBACK" = "true" ]; then
+    print_header "Fallback a deploy legacy (no se pudo descargar la imagen)"
+    deploy_legacy_build || fail_with_rollback "Deploy legacy fallido"
   else
-    if [ "$DEPLOY_ALLOW_FALLBACK" != "true" ]; then
-      echo "Deploy inmutable fallido y fallback deshabilitado"
-      exit 1
-    fi
-    print_header "Fallback a deploy legacy"
-    deploy_legacy_build
+    fail_with_rollback "Deploy inmutable fallido (código $rc)"
   fi
 else
-  deploy_legacy_build
+  deploy_legacy_build || fail_with_rollback "Deploy legacy fallido"
 fi
 
 print_header "Verificando estado final"
-if [ -n "$HEALTH_URL" ]; then
-  curl -sf "$HEALTH_URL" > /dev/null && echo "Health OK" || echo "Health no responde; revisar manualmente"
+if curl -sf --max-time 5 "$HEALTH_URL" > /dev/null; then
+  echo "Health OK"
+  git rev-parse HEAD > "$LAST_DEPLOYED_FILE" || echo "No se pudo guardar el commit desplegado"
 else
-  docker ps --filter "name=$CONTAINER_NAME" --format '{{.Status}}' | grep -q 'Up' && echo "Container running" || echo "Container not running"
+  fail_with_rollback "Health no responde tras el deploy"
 fi
 echo
 print_runtime_status
@@ -124,9 +172,12 @@ print_runtime_status
 
 # ── Post-deploy cleanup ───────────────────────────────────────────────────────
 # Remove old untagged images from ghcr.io (previous deploys leave <none> tags)
-docker images --filter "reference=ghcr.io/jmgb/*" --format '{{.ID}} {{.Tag}}' \
+# Excepto la imagen de rollback: `rmi -f` por ID borra también su etiqueta.
+ROLLBACK_ID="$(docker image inspect --format '{{.Id}}' "$ROLLBACK_TAG" 2>/dev/null || true)"
+docker images --no-trunc --filter "reference=ghcr.io/jmgb/*" --format '{{.ID}} {{.Tag}}' \
   | grep '<none>' \
   | awk '{print $1}' \
+  | grep -vxF "${ROLLBACK_ID:-none}" \
   | xargs -r docker rmi -f 2>/dev/null || true
 docker image prune -f
 docker builder prune -f --keep-storage=500mb

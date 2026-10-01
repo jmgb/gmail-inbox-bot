@@ -29,14 +29,10 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
-      - name: Install dependencies
-        run: uv sync --frozen --group dev
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Test
-        run: uv run pytest -q
+      # Los mismos checks que el CI y el pre-push (lock verificado, formato, hooks): con
+      # unos más laxos aquí, un push que rompe el CI se desplegaba igual.
+      - name: Shared local and CI checks
+        run: bash scripts/ci-local.sh
 
   build-image:
     name: Build immutable image (GHCR)
@@ -106,14 +102,44 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 5m
+          # Espera del lock (hasta 5 min) + pull + healthcheck (~1,5 min) + rollback si falla.
+          command_timeout: 10m
           script: |
             set -euo pipefail
             cd /home/ubuntu/services/gmail-inbox-bot
-            git pull origin main --ff-only
+            # El SHA exacto de la imagen, no el main del momento: con dos pushes seguidos,
+            # config/ (montado desde aquí) podía ir por delante del código de la imagen.
+            DEPLOY_PREVIOUS_SHA="$(git rev-parse HEAD)"
+            git fetch origin main
+            git merge --ff-only '${{ github.sha }}'
+            # Un run retrasado o relanzado de un commit anterior al checkout (p. ej. tras un
+            # deploy a mano) haría "Already up to date" e instalaría la imagen vieja con la
+            # config/ nueva. Se omite.
+            if [ "$(git rev-parse HEAD)" != '${{ github.sha }}' ]; then
+              echo "Checkout en $(git rev-parse --short HEAD), por delante de ${{ github.sha }}: deploy obsoleto, se omite"
+              exit 0
+            fi
 
+            DEPLOY_PREVIOUS_SHA="$DEPLOY_PREVIOUS_SHA" \
             DEPLOY_IMAGE_REF='${{ needs.build-image.outputs.image_ref }}' \
             DEPLOY_ALLOW_FALLBACK='true' \
             GHCR_USERNAME='${{ secrets.GHCR_USERNAME }}' \
             GHCR_TOKEN='${{ secrets.GHCR_TOKEN }}' \
             ./scripts/vps_deploy.sh
+
+  notify-failure:
+    needs: [quality, build-image, deploy]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      # Si el contenedor nuevo no llega a arrancar, el Telegram del bot nunca se inicializa:
+      # este es el único aviso fuera del email de GitHub.
+      - name: Aviso por Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sf --max-time 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=❌ [Gmail Bot] Deploy fallido (${GITHUB_SHA::7}). ${RUN_URL}"

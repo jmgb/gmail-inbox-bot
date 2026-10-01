@@ -114,6 +114,21 @@ def _load_signature(config: dict) -> str:
     return result
 
 
+class _Fallback(str):
+    """Resultado de un handler que no pudo hacer su acción y dejó el email en el inbox.
+
+    Lleva ``PENDIENTE GESTIONAR`` o ``ERROR IA`` y sigue sin leer: el ``folder`` o el
+    ``is_read`` de la regla ya no aplican. Sin esta marca, ``execute()`` (y
+    ``reply_and_move``) movían igualmente el email fuera del inbox y el aviso quedaba
+    escondido en una carpeta.
+    """
+
+
+def _pending_manage(graph, user_email, msg_id, dry_run, categoria) -> _Fallback:
+    pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
+    return _Fallback(_handle_tag(graph, user_email, msg_id, pending_rule, dry_run, categoria))
+
+
 def _reply_tag(draft_mode: bool) -> str:
     return TAG_DRAFT_REPLY if draft_mode else TAG_REPLIED
 
@@ -235,8 +250,7 @@ def _handle_reply(graph, user_email, msg_id, email_msg, config, classification, 
     body_text, lang_key = _get_template_body(config, classification)
     if not body_text:
         log.warning("No template for categoria=%s, tagging PENDIENTE GESTIONAR", categoria)
-        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
-        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, categoria)
+        return _pending_manage(graph, user_email, msg_id, dry_run, categoria)
 
     signature = _load_signature(config)
     html_body = _plain_to_html(body_text) + signature
@@ -270,6 +284,10 @@ def _handle_reply_with_attachment(
     categoria = classification.get("categoria", "otros")
     body_text, lang_key = _get_template_body(config, classification)
     attachments = rule.get("attachments", [])
+    if not body_text:
+        # Sin plantilla se mandaba una respuesta vacía con los adjuntos.
+        log.warning("No template for categoria=%s, tagging PENDIENTE GESTIONAR", categoria)
+        return _pending_manage(graph, user_email, msg_id, dry_run, categoria)
 
     if dry_run:
         names = [a["name"] for a in attachments]
@@ -324,8 +342,7 @@ def _handle_dynamic_reply(
             _subj,
             _received,
         )
-        pending_rule = {"tag": TAG_PENDING_MANAGE, "is_read": False}
-        return _handle_tag(graph, user_email, msg_id, pending_rule, dry_run, "dynamic_reply")
+        return _pending_manage(graph, user_email, msg_id, dry_run, "dynamic_reply")
 
     if dry_run:
         return f"[DRY-RUN] dynamic_reply (model={model})"
@@ -353,7 +370,7 @@ def _handle_dynamic_reply(
             _received,
         )
         graph.update_email(user_email, msg_id, is_read=False, add_categories=[TAG_ERROR])
-        return "dynamic_reply failed, tagged ERROR IA"
+        return _Fallback("dynamic_reply failed, tagged ERROR IA")
 
     response_text = response_data["text"]
     if "usage" in response_data:
@@ -450,6 +467,8 @@ def _handle_reply_and_move(
     reply_result = _handle_reply(
         graph, user_email, msg_id, email_msg, config, classification, dry_run
     )
+    if isinstance(reply_result, _Fallback):
+        return reply_result
     folder = rule.get("folder", "")
     if dry_run:
         return f"{reply_result} + move -> '{folder}'"
@@ -546,6 +565,9 @@ _HANDLERS = {
 }
 
 
+ROUTING_ACTIONS = frozenset(_HANDLERS)
+
+
 def execute(
     graph,
     config: dict,
@@ -608,6 +630,8 @@ def execute(
         "parent_folder": parent_folder,
     }
     result = handler(ctx)
+    if isinstance(result, _Fallback):
+        return str(result)
 
     # Generic post-action: move to folder if specified and not already handled
     actions_with_move = {"move", "tag_and_move", "reply_and_move"}

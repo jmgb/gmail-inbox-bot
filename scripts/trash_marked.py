@@ -190,15 +190,30 @@ def _select_mailbox(configs: list[dict], account: str) -> dict:
     raise ValidationError(f"cuenta no encontrada en config/: {account}")
 
 
-def execute_trash(messages: list[dict], env: dict[str, str], configs: list[dict]) -> list[dict]:
-    """Move validated messages to Gmail trash, preserving per-message results."""
+def execute_trash(
+    messages: list[dict],
+    env: dict[str, str],
+    configs: list[dict],
+    on_result: Callable[[dict], None] | None = None,
+) -> list[dict]:
+    """Move validated messages to Gmail trash, preserving per-message results.
+
+    *on_result* recibe cada resultado en cuanto existe, para que la auditoría quede escrita
+    aunque la pasada se corte a mitad (Ctrl-C, error no capturado).
+    """
     clients: dict[str, object] = {}
     results: list[dict] = []
+
+    def record(result: dict) -> None:
+        results.append(result)
+        if on_result is not None:
+            on_result(result)
+
     try:
         for message in messages:
             account = message["cuenta"]
             if "TRASH" in message.get("labels", []):
-                results.append({**message, "resultado": "already_in_trash", "error": ""})
+                record({**message, "resultado": "already_in_trash", "error": ""})
                 continue
             try:
                 if account not in clients:
@@ -209,11 +224,9 @@ def execute_trash(messages: list[dict], env: dict[str, str], configs: list[dict]
                         request_retries=5,
                     )
                 clients[account].delete_email(account, message["message_id"])
-                results.append({**message, "resultado": "trashed", "error": ""})
+                record({**message, "resultado": "trashed", "error": ""})
             except Exception as exc:  # noqa: BLE001 - continue and audit every message
-                results.append(
-                    {**message, "resultado": "error", "error": f"{type(exc).__name__}: {exc}"}
-                )
+                record({**message, "resultado": "error", "error": f"{type(exc).__name__}: {exc}"})
         return results
     finally:
         for client in clients.values():
@@ -222,23 +235,36 @@ def execute_trash(messages: list[dict], env: dict[str, str], configs: list[dict]
                 http.close()
 
 
-def write_results(path: Path, results: list[dict]) -> None:
-    fields = ["fecha", "cuenta", "message_id", "resultado", "error"]
+RESULT_FIELDS = ["fecha", "cuenta", "message_id", "resultado", "error"]
+
+
+def open_results(path: Path):
+    """Abre la auditoría en modo append (cabecera solo si es nueva) y devuelve el escritor.
+
+    Antes se escribía todo al final con "w": un corte a mitad dejaba mensajes en la papelera
+    sin registro, y cada ejecución machacaba la auditoría de la anterior.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+    is_new = not path.exists() or path.stat().st_size == 0
+    handle = path.open("a", encoding="utf-8", newline="")
+    writer = csv.DictWriter(handle, fieldnames=RESULT_FIELDS, lineterminator="\n")
+    if is_new:
         writer.writeheader()
-        timestamp = datetime.now(timezone.utc).isoformat()
-        for result in results:
-            writer.writerow(
-                {
-                    "fecha": timestamp,
-                    "cuenta": result["cuenta"],
-                    "message_id": result["message_id"],
-                    "resultado": result["resultado"],
-                    "error": result.get("error", ""),
-                }
-            )
+        handle.flush()
+
+    def write(result: dict) -> None:
+        writer.writerow(
+            {
+                "fecha": datetime.now(timezone.utc).isoformat(),
+                "cuenta": result["cuenta"],
+                "message_id": result["message_id"],
+                "resultado": result["resultado"],
+                "error": result.get("error", ""),
+            }
+        )
+        handle.flush()
+
+    return handle, write
 
 
 def main() -> int:
@@ -265,9 +291,12 @@ def main() -> int:
         if not confirm_trash(len(messages)):
             print("cancelado: no se ha escrito la frase exacta")
             return 2
-        results = execute_trash(messages, load_env(), load_mailbox_configs())
         results_path = args.results or args.messages.with_name("trash_results.csv")
-        write_results(results_path, results)
+        handle, write = open_results(results_path)
+        try:
+            results = execute_trash(messages, load_env(), load_mailbox_configs(), on_result=write)
+        finally:
+            handle.close()
         failed = sum(result["resultado"] == "error" for result in results)
         print(f"procesados={len(results)} errores={failed} auditoría={results_path}")
         return 1 if failed else 0

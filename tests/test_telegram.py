@@ -95,6 +95,23 @@ class TestSendChunk:
         assert mock_post.call_count == 2
 
     @patch("gmail_inbox_bot.telegram.httpx2.post")
+    def test_html_rechazado_se_reenvia_en_texto_plano(self, mock_post):
+        """Un trozo que corta un <pre> da 400 "can't parse entities": el aviso no se pierde."""
+        rechazo = MagicMock(status_code=400, text="bad")
+        rechazo.json.return_value = {
+            "description": "Bad Request: can't parse entities: unclosed start tag"
+        }
+        mock_post.side_effect = [rechazo, MagicMock(status_code=200)]
+        payload = {"chat_id": "1", "text": "<b>Error</b> <pre>a &lt; b", "parse_mode": "HTML"}
+
+        ok, _ = _send_chunk(url="http://x", payload=payload, referencia="t", max_attempts=1)
+
+        assert ok is True
+        reenvio = mock_post.call_args_list[1].kwargs["json"]
+        assert "parse_mode" not in reenvio
+        assert reenvio["text"] == "Error a < b"
+
+    @patch("gmail_inbox_bot.telegram.httpx2.post")
     def test_network_error(self, mock_post):
         mock_post.side_effect = httpx2.ConnectError("timeout")
         ok, err = _send_chunk(url="http://x", payload={}, referencia="test", max_attempts=1)
