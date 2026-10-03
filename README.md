@@ -553,9 +553,15 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
   enumerar y leer los logs de **todos** los contenedores del VPS, y el visor solo lee el suyo.
   El endpoint lo elige `DOCKER_API_TCP` (`admin_logs._docker_connection`): sin esa variable se
   vuelve al socket unix, así que revertir es quitarla.
-  **Comprobación tras el primer despliegue** (no se puede validar antes, depende del DNS de la red
-  docker): abrir `/admin/logs` → pestaña "Docker: gmail-inbox-bot" y ver líneas. Si sale vacío o con
-  error, `docker logs gmail-docker-socket-proxy` dice si rechazó por `allowfrom` o por ruta.
+  **`user: "65534:988"` no es opcional**: el socket del host es `root:docker` y la imagen corre como
+  `65534:65534`, así que sin ese GID el proxy no puede abrirlo — arranca, falla con
+  `dial unix /var/run/docker.sock: connect: permission denied` y se reinicia cada minuto. El 988 es
+  el grupo `docker` de este VPS (`getent group docker`); si se migra de máquina hay que re-derivarlo.
+  **Verificado el 2026-10-03** contra producción: desde el contenedor del bot, un GET a
+  `/containers/gmail-inbox-bot/logs` devuelve **200** (el `-allowfrom` resuelve el nombre por DNS de
+  la red docker) y el mismo GET sobre otro contenedor devuelve **403**. Si algún día sale vacío o con
+  error, `docker logs gmail-docker-socket-proxy` dice si rechazó por permisos, por `allowfrom` o por
+  ruta.
 
 ---
 

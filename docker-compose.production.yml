@@ -36,6 +36,11 @@ services:
   docker-socket-proxy:
     image: wollomatic/socket-proxy:1.13.1
     container_name: gmail-docker-socket-proxy
+    # El socket del host es root:docker (988 en este VPS: `getent group docker`), y la imagen
+    # corre como 65534:65534, así que sin esto el proxy no puede abrirlo: arrancaba, fallaba con
+    # "dial unix /var/run/docker.sock: connect: permission denied" y se reiniciaba cada minuto.
+    # Mismo valor que tuli-docker-socket-proxy, que lleva meses funcionando en esta máquina.
+    user: "65534:988"
     command:
       - "-loglevel=WARN"
       - "-listenip=0.0.0.0"
