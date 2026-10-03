@@ -405,6 +405,23 @@ def process_mailbox(
     return results
 
 
+def _warn_if_jev_has_no_llm_fallback(
+    *, jev: JevClassifier | None, openai_client: SynchronousLLMGateway | None
+) -> None:
+    """Avisa al arrancar si Jev decide y no hay cadena LLM detrás.
+
+    Es una configuración válida —Jev no necesita al LLM para clasificar—, pero entonces un
+    ``jev_error`` deja el email en ERROR IA sin segundo intento. Sin este aviso, la primera
+    señal de que no hay red es un email sin clasificar en el inbox.
+    """
+    if jev is None or _has_llm_client(openai_client):
+        return
+    log.warning(
+        "Jev es el clasificador principal y no hay cadena LLM configurada "
+        "(OPENAI_API_KEY/GROQ_API_KEY): si Jev falla, el email se queda en ERROR IA sin fallback"
+    )
+
+
 def run(*, dry_run: bool = False, once: bool = False) -> None:
     """Main entry point — load config, build clients, and start polling loop.
 
@@ -419,6 +436,7 @@ def run(*, dry_run: bool = False, once: bool = False) -> None:
     setup_telegram_logging(chat_id=os.environ.get("TELEGRAM_CHAT_ID"))
     openai_client = _build_llm_clients(env)
     jev = build_jev_classifier(env)
+    _warn_if_jev_has_no_llm_fallback(jev=jev, openai_client=openai_client)
     configs = load_mailbox_configs()
 
     if not configs:

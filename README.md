@@ -185,6 +185,12 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   dos puntos anteriores (Groq y su fallback a OpenAI) pasan a ser el **fallback de segundo nivel**:
   solo se llama al LLM si Jev devuelve error. Sin `JEV_API_KEY` clasifica el LLM, como antes del
   corte — es el camino de vuelta, sin tocar código.
+  **Jev es autosuficiente**: los requisitos del LLM (cliente con `OPENAI_API_KEY`/`GROQ_API_KEY` y
+  `classifier.prompt_file` en el YAML) solo se exigen cuando de verdad toca usarlo, y el prompt ni
+  se lee del disco si decide Jev. Sin claves del LLM el bot sigue clasificando; lo que se pierde es
+  el fallback, así que el arranque lo avisa con un WARNING
+  (`_warn_if_jev_has_no_llm_fallback`): un `jev_error` en esa configuración deja el email en
+  `ERROR IA` sin segundo intento.
   El cliente usa explícitamente `jev-latest` para recibir las nuevas versiones estables automáticamente.
   Al cambiar la versión real, avisa una vez por Telegram. El estado persiste en
   `logs/jev_model_version.txt`; la primera observación es silenciosa y el aviso se envía en segundo plano.

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typesafe_sdk import Choice
 
+import gmail_inbox_bot.bot as bot_module
 from gmail_inbox_bot.bot import (
     _build_gmail_client,
     _build_llm_clients,
@@ -499,6 +500,48 @@ class TestProcessEmailGaps:
 
     @patch("gmail_inbox_bot.bot.record_email")
     @patch("gmail_inbox_bot.bot.execute", return_value="moved")
+    @patch("gmail_inbox_bot.bot.load_prompt")
+    def test_jev_decide_sin_prompt_file_y_sin_leerlo_del_disco(
+        self, mock_load, mock_execute, _mock_record, mock_gmail, config
+    ):
+        """El prompt es del LLM: ni se exige en el YAML ni se lee si decide Jev.
+
+        La otra mitad de hacer a Jev autosuficiente: antes se abortaba con ERROR IA si
+        faltaba classifier.prompt_file, y se leía el fichero en cada email aunque no se
+        usara.
+        """
+        config.pop("classifier", None)
+        jev = MagicMock()
+        jev.classify.return_value = dict(self._JEV_OK)
+
+        result = _process_email(mock_gmail, None, config, _make_email(), jev=jev)
+
+        assert result == "moved"
+        assert mock_execute.call_args.args[3]["categoria"] == "compras"
+        mock_load.assert_not_called()
+        mock_gmail.update_email.assert_not_called()
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    def test_sin_prompt_file_y_con_jev_caido_si_etiqueta_error_ia(
+        self, mock_record, mock_gmail, config
+    ):
+        """Los requisitos del LLM siguen exigiéndose cuando de verdad toca usarlo."""
+        config.pop("classifier", None)
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_error": "TypeSafeAPITimeoutError: boom",
+            "jev_latency_ms": 4000,
+        }
+
+        result = _process_email(mock_gmail, MagicMock(), config, _make_email(), jev=jev)
+
+        assert "ERROR IA" in result
+        recorded = mock_record.call_args.kwargs
+        assert recorded["category"] == "error_no_prompt"
+        assert recorded["jev_error"].startswith("TypeSafeAPITimeoutError")
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="moved")
     def test_jev_recibe_el_asunto_completo(self, _mock_execute, mock_record, mock_gmail, config):
         jev = MagicMock()
         jev.classify.return_value = dict(self._JEV_OK)
@@ -558,3 +601,31 @@ class TestHeartbeat:
         self._run_once(monkeypatch, {"a": [], "b": [bot_module.FETCH_ERROR]})
 
         assert bot_module.last_successful_poll is None
+
+
+class TestAvisoDeFallbackAusente:
+    """Jev decide; si no hay cadena LLM, un fallo de Jev se queda sin red.
+
+    Es una configuración válida (Jev es autosuficiente desde la auditoría del 2026-10-01),
+    pero el arranque tiene que decirlo: si no, la primera señal de que no hay fallback es un
+    email en ERROR IA.
+    """
+
+    def test_avisa_cuando_jev_corre_sin_cadena_llm(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="gmail_inbox_bot.bot"):
+            bot_module._warn_if_jev_has_no_llm_fallback(jev=MagicMock(), openai_client=None)
+
+        assert any("sin fallback" in r.getMessage() for r in caplog.records)
+
+    def test_calla_cuando_hay_cadena_llm(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="gmail_inbox_bot.bot"):
+            bot_module._warn_if_jev_has_no_llm_fallback(jev=MagicMock(), openai_client=MagicMock())
+
+        assert caplog.records == []
+
+    def test_calla_cuando_decide_el_llm(self, caplog):
+        """Sin Jev no hay nada que avisar: el LLM es el principal y sus guardas ya aplican."""
+        with caplog.at_level(logging.WARNING, logger="gmail_inbox_bot.bot"):
+            bot_module._warn_if_jev_has_no_llm_fallback(jev=None, openai_client=None)
+
+        assert caplog.records == []
