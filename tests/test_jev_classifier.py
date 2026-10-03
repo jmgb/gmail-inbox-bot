@@ -309,3 +309,73 @@ class TestClassificationFromJev:
         # Sin usage ni cost: Jev no factura por tokens y un cero falsearía el coste LLM.
         assert "usage" not in clasificacion
         assert "cost" not in clasificacion
+
+
+class TestUmbralDeConfianza:
+    """El umbral lo fija el coste de equivocarse en ese destino, no la pericia de Jev.
+
+    Calibrado el 2026-10-03 sobre las 286 comparaciones de la sombra: `spam` va a la papelera
+    y ni con 0.95 pasa del 92 % de coincidencia; `newsletters` saca el email del inbox y a
+    partir de 0.70 sube del 78 % al 93 %. Las categorías que acaban en REVISAR IA no llevan
+    umbral: ya están delante del usuario, así que un fallo ahí no cuesta nada.
+    """
+
+    def _jev(self, categoria, confianza, **extra):
+        return {
+            "jev_category": categoria,
+            "jev_confidence": confianza,
+            "jev_probabilities": {categoria: confianza},
+            "jev_model": "jev-1.13.0",
+            **extra,
+        }
+
+    def test_spam_por_encima_del_umbral_sigue_siendo_spam(self):
+        cat, degradada = jev_classifier.effective_category(self._jev("spam", 0.96))
+        assert (cat, degradada) == ("spam", False)
+
+    def test_spam_justo_en_el_umbral_sigue_siendo_spam(self):
+        cat, _ = jev_classifier.effective_category(self._jev("spam", 0.95))
+        assert cat == "spam"
+
+    def test_spam_por_debajo_no_va_a_la_papelera(self):
+        cat, degradada = jev_classifier.effective_category(self._jev("spam", 0.94))
+        assert (cat, degradada) == ("spam_sin_confirmar", True)
+
+    def test_newsletters_en_el_umbral_se_archiva(self):
+        cat, degradada = jev_classifier.effective_category(self._jev("newsletters", 0.70))
+        assert (cat, degradada) == ("newsletters", False)
+
+    def test_newsletters_por_debajo_se_deja_para_revision(self):
+        cat, degradada = jev_classifier.effective_category(self._jev("newsletters", 0.69))
+        assert (cat, degradada) == ("newsletters_sin_confirmar", True)
+
+    def test_las_categorias_que_van_al_inbox_no_llevan_umbral(self):
+        """personal/finanzas/otros ya los ve el usuario: degradarlos no protege de nada."""
+        for cat in ("personal", "finanzas", "otros"):
+            efectiva, degradada = jev_classifier.effective_category(self._jev(cat, 0.10))
+            assert (efectiva, degradada) == (cat, False), cat
+
+    def test_notificaciones_y_automatico_tampoco(self):
+        for cat in ("notificaciones", "automatico", "compras"):
+            efectiva, degradada = jev_classifier.effective_category(self._jev(cat, 0.30))
+            assert (efectiva, degradada) == (cat, False), cat
+
+    def test_sin_confianza_se_degrada_por_si(self):
+        """Una respuesta sin confianza no puede justificar borrar: se trata como dudosa."""
+        cat, degradada = jev_classifier.effective_category(self._jev("spam", None))
+        assert (cat, degradada) == ("spam_sin_confirmar", True)
+
+    def test_la_razon_dice_que_se_quedo_por_debajo_del_umbral(self):
+        clasificacion = jev_classifier.classification_from_jev(self._jev("spam", 0.60))
+        razon = clasificacion["razon_clasificacion"]
+        assert "0.60" in razon
+        assert "0.95" in razon
+
+    def test_classification_from_jev_devuelve_la_categoria_efectiva(self):
+        clasificacion = jev_classifier.classification_from_jev(self._jev("spam", 0.60))
+        assert clasificacion["categoria"] == "spam_sin_confirmar"
+
+    def test_una_clasificacion_segura_no_menciona_umbrales(self):
+        clasificacion = jev_classifier.classification_from_jev(self._jev("spam", 0.99))
+        assert clasificacion["categoria"] == "spam"
+        assert "umbral" not in clasificacion["razon_clasificacion"]

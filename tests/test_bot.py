@@ -263,10 +263,13 @@ class TestProcessEmail:
         self, _mock_load, mock_classify, mock_execute, mock_record, mock_gmail, config
     ):
         jev = MagicMock()
+        # notificaciones no lleva umbral de confianza, así que este test mide solo lo que
+        # dice su nombre: que Jev decide y la cadena LLM no se toca. Los umbrales se prueban
+        # en TestUmbralLlegaAlRouting y en TestUmbralDeConfianza.
         jev.classify.return_value = {
-            "jev_category": "spam",
+            "jev_category": "notificaciones",
             "jev_confidence": 0.9,
-            "jev_probabilities": {"spam": 0.9, "otros": 0.1},
+            "jev_probabilities": {"notificaciones": 0.9, "otros": 0.1},
             "jev_latency_ms": 500,
             "jev_model": "jev-1.13.0",
         }
@@ -281,13 +284,13 @@ class TestProcessEmail:
         assert call["sender_address"] == "juan@empresa.com"
         # Jev decide: la cadena LLM no se toca y no hay tokens ni coste que registrar.
         mock_classify.assert_not_called()
-        assert mock_execute.call_args.args[3]["categoria"] == "spam"
+        assert mock_execute.call_args.args[3]["categoria"] == "notificaciones"
         recorded = mock_record.call_args.kwargs
-        assert recorded["category"] == "spam"
+        assert recorded["category"] == "notificaciones"
         assert recorded["model"] == "jev-1.13.0"
         assert recorded["total_cost_usd"] is None
         assert recorded["total_tokens"] is None
-        assert recorded["jev_category"] == "spam"
+        assert recorded["jev_category"] == "notificaciones"
         assert recorded["jev_confidence"] == 0.9
         assert recorded["jev_latency_ms"] == 500
 
@@ -629,3 +632,46 @@ class TestAvisoDeFallbackAusente:
             bot_module._warn_if_jev_has_no_llm_fallback(jev=None, openai_client=None)
 
         assert caplog.records == []
+
+
+class TestUmbralLlegaAlRouting:
+    """Lo que decide el routing es la categoría efectiva, no la opinión cruda de Jev."""
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="moved")
+    def test_spam_dudoso_no_se_rutea_como_spam(self, mock_execute, mock_record, mock_gmail, config):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_category": "spam",
+            "jev_confidence": 0.60,
+            "jev_probabilities": {"spam": 0.60, "newsletters": 0.40},
+            "jev_latency_ms": 200,
+            "jev_model": "jev-1.13.0",
+        }
+
+        _process_email(mock_gmail, None, config, _make_email(), jev=jev)
+
+        assert mock_execute.call_args.args[3]["categoria"] == "spam_sin_confirmar"
+        recorded = mock_record.call_args.kwargs
+        # La métrica guarda lo que se hizo y, aparte, lo que Jev opinaba.
+        assert recorded["category"] == "spam_sin_confirmar"
+        assert recorded["jev_category"] == "spam"
+        assert recorded["jev_confidence"] == 0.60
+
+    @patch("gmail_inbox_bot.bot.record_email")
+    @patch("gmail_inbox_bot.bot.execute", return_value="trashed")
+    def test_spam_seguro_si_se_rutea_como_spam(
+        self, mock_execute, _mock_record, mock_gmail, config
+    ):
+        jev = MagicMock()
+        jev.classify.return_value = {
+            "jev_category": "spam",
+            "jev_confidence": 0.99,
+            "jev_probabilities": {"spam": 0.99},
+            "jev_latency_ms": 200,
+            "jev_model": "jev-1.13.0",
+        }
+
+        _process_email(mock_gmail, None, config, _make_email(), jev=jev)
+
+        assert mock_execute.call_args.args[3]["categoria"] == "spam"

@@ -120,6 +120,43 @@ class JevClassifier:
             }
 
 
+# Umbral de confianza por categoría, con la categoría efectiva cuando no se alcanza.
+#
+# El umbral lo fija **el coste de equivocarse en ese destino**, no lo bien que clasifica Jev.
+# Calibrado el 2026-10-03 sobre las 286 comparaciones de la fase de sombra (detalle en TASKS.md):
+#   - `spam` es el único destino que BORRA (papelera), y ni con >=0.95 pasa del 92 % de
+#     coincidencia: por debajo de ese corte no se borra nada, se archiva sin leer.
+#   - `newsletters` saca el email del inbox y es el 42 % del volumen; a partir de 0.70 la
+#     coincidencia sube del 78 % al 93 % desviando solo 16 de 59. Por debajo va al inbox porque
+#     la confusión documentada es `personal -> newsletters`: ahí se juega correo personal.
+#   - El resto NO lleva umbral a propósito. `personal`, `finanzas` y `otros` ya se quedan sin leer
+#     en el inbox, que es justo donde Jev es más flojo (50 % y 57 %) sin que importe; y
+#     `notificaciones` con 92 % sobre n=76 no justifica desviar el 43 % de su volumen por 3 puntos.
+#
+# Las categorías degradadas necesitan su entrada en el `routing` de cada buzón. Sin ella el bot
+# cae en `PENDIENTE GESTIONAR` (inbox, sin leer): más ruidoso que el diseño, pero nunca borra.
+CONFIDENCE_FLOORS: dict[str, tuple[float, str]] = {
+    "spam": (0.95, "spam_sin_confirmar"),
+    "newsletters": (0.70, "newsletters_sin_confirmar"),
+}
+
+
+def effective_category(jev_result: dict) -> tuple[str, bool]:
+    """Categoría sobre la que actúa el routing, y si se degradó por falta de confianza.
+
+    Una respuesta sin confianza numérica se trata como dudosa: no puede justificar un borrado.
+    """
+    categoria = jev_result["jev_category"]
+    floor = CONFIDENCE_FLOORS.get(categoria)
+    if floor is None:
+        return categoria, False
+    minimo, degradada = floor
+    confianza = jev_result.get("jev_confidence")
+    if isinstance(confianza, (int, float)) and confianza >= minimo:
+        return categoria, False
+    return degradada, True
+
+
 def classification_from_jev(jev_result: dict) -> dict:
     """Traduce la respuesta de Jev a la forma que consume el resto del pipeline.
 
@@ -128,8 +165,9 @@ def classification_from_jev(jev_result: dict) -> dict:
     se adapta a ese contrato en vez de tocar todo lo de abajo. No lleva ``usage`` ni
     ``cost``: Jev no factura por tokens y registrar ceros falsearía el coste LLM.
     """
+    categoria, _degradada = effective_category(jev_result)
     return {
-        "categoria": jev_result["jev_category"],
+        "categoria": categoria,
         "razon_clasificacion": _jev_reason(jev_result),
         "model_used": jev_result.get("jev_model") or "jev",
     }
@@ -158,6 +196,10 @@ def _jev_reason(jev_result: dict) -> str:
     if alternativas and alternativas[0][1] >= _MIN_PROB_ALTERNATIVA:
         segunda, probabilidad = alternativas[0]
         razon += f" (siguiente opción: {segunda}, {probabilidad:.2f})"
+    _, degradada = effective_category(jev_result)
+    if degradada:
+        minimo, efectiva = CONFIDENCE_FLOORS[elegida]
+        razon += f" — por debajo del umbral {minimo:.2f} de {elegida}, se queda en {efectiva}"
     return razon
 
 

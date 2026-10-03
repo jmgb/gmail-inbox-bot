@@ -50,8 +50,16 @@ Jev" para que se vea que esa muestra ya no crece.
 
 ### Lo que queda, por orden
 
-1. **Umbral de confianza por categoría** — es lo único que falta para que esto sea seguro por
-   construcción. Hoy una clasificación de Jev con `0.40` decide igual que una con `0.99`, y los
+1. ~~**Umbral de confianza por categoría**~~ — **implementado en código el 2026-10-03**
+   (`CONFIDENCE_FLOORS` en `jev_classifier.py`): `spam >=0.95` → `spam_sin_confirmar`,
+   `newsletters >=0.70` → `newsletters_sin_confirmar`, el resto sin umbral porque su destino ya es
+   el inbox. **Queda el cableado del `routing`**: hay que añadir esas dos categorías a
+   `config/jesus82c.yml` y `config/miguelgutierrezbarquin.yml` con el destino previsto
+   (`spam_sin_confirmar` → mover a carpeta `Spam IA` sin leer; `newsletters_sin_confirmar` → tag
+   `REVISAR IA`). Mientras no estén, el bot las manda a `PENDIENTE GESTIONAR` (inbox, sin leer):
+   no borra nada, pero mete en el inbox lo que debería ir a la carpeta. Al añadirlas, comprobar si
+   existe un test de paridad entre las claves de `clasificador_jev.yml` y las del `routing`.
+   Lo que motivó el diseño original. Hoy una clasificación de Jev con `0.40` decide igual que una con `0.99`, y los
    tramos bajos son justo donde menos acierta (54,5 % en `0.5-0.7`). Diseño previsto: por debajo del
    umbral, caer al LLM en vez de decidir; más exigente para `spam` (va a papelera) y para
    `facturas` (sale del inbox **leída**: un error queda igual de escondido), y más laxo para las que

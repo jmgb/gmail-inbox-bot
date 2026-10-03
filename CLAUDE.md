@@ -191,9 +191,13 @@ solo entra si Jev devuelve error**. Del 21 al 27 de septiembre corrió en sombra
   se registra como warning y nunca cambia la clasificación.
 - **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_classifier()`
   devuelve `None` y clasifica el LLM como antes.
-- **La confianza se registra pero no filtra**: una clasificación de Jev con `0.40` decide igual que
-  una con `0.99`. El umbral por categoría está pendiente (ver `TASKS.md`), y es lo que falta para
-  que esto sea seguro por construcción.
+- **La confianza filtra desde el 2026-10-03** (`CONFIDENCE_FLOORS` en `jev_classifier.py`): `spam`
+  exige `>=0.95` y `newsletters` `>=0.70`; por debajo la categoría efectiva pasa a
+  `spam_sin_confirmar` / `newsletters_sin_confirmar`. El resto no lleva umbral porque su destino ya
+  es el inbox. El criterio es el coste del error en ese destino, no la pericia de Jev. **Nada cae al
+  LLM por confianza baja**: la sombra medía desacuerdo, no quién acierta.
+  ⚠️ Esas dos categorías **necesitan entrada en el `routing` de cada buzón**; sin ella caen en
+  `PENDIENTE GESTIONAR` (inbox, sin leer) — nunca borra, pero no es el destino diseñado.
 - **`razon_clasificacion`** la sintetiza `classification_from_jev()` a partir de la confianza y la
   segunda opción: Jev no devuelve prosa. Las filas decididas por Jev llevan `model=jev-<versión>`,
   y **no** llevan `usage` ni `cost` (Jev no factura por tokens).

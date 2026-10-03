@@ -185,6 +185,20 @@ factorías del paquete; el gateway no lee el entorno. El prompt vive en
   dos puntos anteriores (Groq y su fallback a OpenAI) pasan a ser el **fallback de segundo nivel**:
   solo se llama al LLM si Jev devuelve error. Sin `JEV_API_KEY` clasifica el LLM, como antes del
   corte — es el camino de vuelta, sin tocar código.
+  **Umbral de confianza por categoría** (`CONFIDENCE_FLOORS`, calibrado el 2026-10-03 sobre las
+  286 comparaciones de la sombra): el umbral lo fija **el coste de equivocarse en ese destino**, no
+  la pericia de Jev. `spam` exige `>=0.95` — es el único destino que borra, y ni ahí pasa del 92 %
+  de coincidencia — y por debajo pasa a `spam_sin_confirmar`. `newsletters` exige `>=0.70` (sube del
+  78 % al 93 %) y por debajo pasa a `newsletters_sin_confirmar`. El resto **no lleva umbral** a
+  propósito: `personal`, `finanzas` y `otros` ya se quedan sin leer en el inbox, que es donde Jev es
+  más flojo (50 % y 57 %) sin que importe. Una respuesta sin confianza numérica se trata como
+  dudosa. Nada cae al LLM por confianza baja: la sombra mide desacuerdo, no quién acierta, así que
+  degradar a un destino visible es correcto por construcción y el LLM no lo sería.
+  ⚠️ **Las dos categorías degradadas necesitan su entrada en el `routing` de cada buzón**
+  (`config/*.yml`). Sin ella el bot cae en `PENDIENTE GESTIONAR` (inbox, sin leer): más ruidoso que
+  el diseño, pero **nunca borra**. Destinos previstos: `spam_sin_confirmar` → carpeta `Spam IA` sin
+  leer; `newsletters_sin_confirmar` → tag `REVISAR IA`.
+
   **Jev es autosuficiente**: los requisitos del LLM (cliente con `OPENAI_API_KEY`/`GROQ_API_KEY` y
   `classifier.prompt_file` en el YAML) solo se exigen cuando de verdad toca usarlo, y el prompt ni
   se lee del disco si decide Jev. Sin claves del LLM el bot sigue clasificando; lo que se pierde es
