@@ -105,7 +105,7 @@ jobs:
       - name: Request administrator promotion
         env:
           REQUEST_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
           VPS_SSH_HOST_KEY: ${{ vars.VPS_SSH_HOST_KEY }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
@@ -126,20 +126,3 @@ jobs:
             -o ForwardAgent=no -o ClearAllForwardings=yes \
             -i "$request_dir/key" -- "deploy-gmail@$VPS_HOST" \
             "request $GITHUB_SHA $IMAGE_DIGEST"
-
-  notify-failure:
-    needs: [quality, build-image, request-promotion]
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      # Si el contenedor nuevo no llega a arrancar, el Telegram del bot nunca se inicializa:
-      # este es el único aviso fuera del email de GitHub.
-      - name: Aviso por Telegram
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          curl -sf --max-time 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=❌ [Gmail Bot] Build/solicitud de promoción fallida (${GITHUB_SHA::7}). ${RUN_URL}"
