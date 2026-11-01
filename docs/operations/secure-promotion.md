@@ -4,6 +4,11 @@ GitHub construye la imagen y solicita su promoción. La cuenta `deploy-gmail` so
 `request SOURCE_SHA sha256:DIGEST`; no tiene sudo, Docker ni acceso a secretos de ejecución.
 La respuesta `awaiting_admin_approval` no significa que la imagen esté desplegada.
 
+`VPS_HOST` y `VPS_SSH_HOST_KEY` son variables de Actions; `VPS_SSH_KEY` es el único secret de
+solicitud propio (además del `GITHUB_TOKEN` integrado que publica la imagen en GHCR). El workflow
+no manda avisos de fallo a Telegram. La monitorización de Root fuera de CI está pendiente; hasta
+entonces, revisar el run en GitHub. No se reenvían fallos de Actions por Telegram.
+
 ## Aprobar y activar
 
 1. Revisar el cambio y verificar el artefacto exacto desde un entorno de confianza independiente.

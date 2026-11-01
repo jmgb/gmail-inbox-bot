@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -249,6 +250,48 @@ class WorkflowBoundaryTests(unittest.TestCase):
         self.assertIn("deploy-gmail@", text)
         self.assertIn("StrictHostKeyChecking=yes", text)
         self.assertIn("VPS_SSH_HOST_KEY", text)
+
+    def test_ci_uses_only_request_key_secret_and_host_variables(self):
+        root = Path(__file__).parents[1]
+        workflows = "\n".join(
+            path.read_text() for path in sorted((root / ".github/workflows").glob("*.y*ml"))
+        )
+        self.assertTrue(
+            "VPS_HOST: ${{ vars.VPS_HOST }}" in workflows,
+            "VPS_HOST must come from an Actions variable",
+        )
+        self.assertTrue(
+            "VPS_SSH_HOST_KEY: ${{ vars.VPS_SSH_HOST_KEY }}" in workflows,
+            "VPS_SSH_HOST_KEY must come from an Actions variable",
+        )
+        secret_refs = set(re.findall(r"\$\{\{\s*secrets\.([A-Z_0-9]+)", workflows))
+        self.assertEqual(secret_refs, {"GITHUB_TOKEN", "VPS_SSH_KEY"})
+        self.assertNotIn("secrets.VPS_HOST", workflows)
+        self.assertNotIn("secrets.TELEGRAM_TOKEN", workflows)
+        self.assertNotIn("secrets.TELEGRAM_CHAT_ID", workflows)
+        self.assertNotIn("notify-failure:", workflows)
+        self.assertNotIn("api.telegram.org", workflows)
+        self.assertIn("REQUEST_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}", workflows)
+        self.assertIn("deploy-gmail@$VPS_HOST", workflows)
+        self.assertIn('"request $GITHUB_SHA $IMAGE_DIGEST"', workflows)
+        self.assertIn("IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}", workflows)
+        self.assertIn("ghcr.io/${OWNER_LOWER}/gmail-inbox-bot", workflows)
+
+    def test_ci_failure_alert_docs_leave_telegram_in_root_monitor_pending(self):
+        root = Path(__file__).parents[1]
+        docs = (root / "docs/operations/secure-promotion.md").read_text()
+        self.assertTrue(
+            "VPS_HOST` y `VPS_SSH_HOST_KEY` son variables de Actions" in docs,
+            "promotion docs must identify host metadata as Actions variables",
+        )
+        self.assertTrue(
+            "La monitorización de Root fuera de CI está pendiente" in docs,
+            "promotion docs must mark external Root monitoring as pending",
+        )
+        self.assertTrue(
+            "No se reenvían fallos de Actions por Telegram" in docs,
+            "promotion docs must state failures are not resent to Telegram",
+        )
 
 
 class DockerBoundaryTests(unittest.TestCase):
