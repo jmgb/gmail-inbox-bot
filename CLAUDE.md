@@ -168,7 +168,7 @@ los tres se queda sin actualizar.
 2. Identificar clasificaciones incorrectas (ej. banco → `otros` en vez de `finanzas`)
 3. Añadir la regla en `clasificador_jev.yml` (`not_for` / `examples` de las categorías implicadas)
    y su equivalente en "Reglas aprendidas de producción" del prompt LLM
-4. Deploy (push a main → autodeploy)
+4. Construir y solicitar promoción (push a main); aprobar y activar la imagen fuera de GitHub.
 
 **Principios:**
 - Las reglas deben ser concretas (dominios, patrones de asunto, tipos de remitente)
@@ -216,19 +216,29 @@ propósito). Diseño:
 
 ## Despliegue
 
-- **VPS**: `158.69.215.223` (usuario `ubuntu`)
-- **Ruta en VPS**: `/home/ubuntu/services/gmail-inbox-bot`
-- **Deploy automático**: push a `main` (salvo commits solo de `tests/`, `docs/` o `*.md`) → GitHub
-  Action (`deploy-vps.yml`): `scripts/ci-local.sh` → build de la imagen en GHCR → en el VPS,
-  `git merge --ff-only <sha desplegado>` + `scripts/vps_deploy.sh`, que descarga la imagen por
-  digest y hace `up -d --no-build`. Solo si la **descarga** falla vuelve a construir en el VPS; si
-  la imagen nueva no pasa el healthcheck, vuelve a la anterior (`gmail-inbox-bot:rollback`) y el
-  deploy falla. Cualquier fallo del workflow avisa por Telegram (job `notify-failure`)
-- **Deploy a mano** (sin minutos de GitHub Actions, o para desplegar ya): tras el push,
-  `ssh ubuntu@158.69.215.223 'cd /home/ubuntu/services/gmail-inbox-bot && git pull origin main --ff-only && ./scripts/vps_deploy.sh'`.
-  Sin `DEPLOY_IMAGE_REF`, el script construye la imagen en el VPS (`up -d --build`) y espera al
-  healthcheck. Si falla, el rollback vuelve al último commit sano (`.last_deployed_sha`, lo
-  escribe cada deploy correcto). Usado el 2026-09-30
+- **VPS**: `158.69.215.223`. Administración: `prod-admin`; CI: `deploy-gmail`, solo solicitudes.
+- **Promotor instalado**: `/usr/local/sbin/gmail-promote`, código root-owned fuera del checkout.
+  Configuración, decisiones y secretos de ejecución en `/opt/gmail-promotion`.
+- **Tras integrar el workflow nuevo**, cada push construye una imagen en GHCR y envía únicamente
+  `request <sha completo> <sha256:digest>` al servidor. La respuesta `awaiting_admin_approval`
+  significa que la imagen está pendiente; no reinicia ni despliega el bot. CI no recibe sudo,
+  Docker ni credenciales de ejecución. `VPS_SSH_KEY` se reemplaza por una clave de solicitudes;
+  `VPS_SSH_HOST_KEY` contiene la clave pública SSH del host, obtenida por administración confiable.
+- **Promoción manual**, después de revisar/verificar independientemente el artefacto y su
+  configuración: `sudo gmail-promote approve <source-sha> <image-digest> <config-digest>` y
+  `sudo gmail-promote apply <approval-id>`. La aprobación queda fuera del control de GitHub;
+  vincula imagen, snapshot de configuración y entorno. Un SHA declarado por CI no demuestra
+  que una imagen corresponda a ese código. Ver `docs/operations/secure-promotion.md`.
+- **Health y rollback**: el promotor comprueba Docker y HTTP; ante fallo intenta volver al perfil
+  anterior y guarda `last-failure.json`, con el resultado del health de rollback. Revisarlo ante
+  cualquier error. Los logs y el proxy Docker existentes se conservan.
+- **Credenciales**: la ejecución promovida usa `runtime-env.json` root-only, capturado del entorno
+  efectivo y respaldado cifrado. Cambiar el `.env` del checkout no actualiza ese snapshot. Las
+  rotaciones requieren actualizar sus consumidores, backup cifrado y reaprobación del entorno.
+- **Estado transitorio**: `scripts/vps_deploy.sh` es una ruta heredada. Las identidades antiguas
+  que conservan sudo/Docker todavía pueden saltarse la promoción; su migración sigue en G02.
+  La nueva identidad de CI no tiene esos permisos. El checkout de
+  `/home/ubuntu/services/gmail-inbox-bot` conserva fuentes/histórico y el directorio de logs.
 - **Puerto**: `8007` (mapeado a `8000` interno)
 - **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
 - **Log Viewer**: https://email.pymechat.com/admin/logs
