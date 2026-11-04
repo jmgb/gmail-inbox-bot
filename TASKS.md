@@ -96,3 +96,7 @@ decide por igualdad exacta sobre un campo `idioma` que el prompt de este repo **
 Decidir: (a) mantenerlo como capacidad documentada y portar la normalización de pacto para que
 las dos copias no divergan, o (b) retirar el camino de plantillas de este repo y quedarse con
 las acciones que se usan. No tocado ahora porque es un refactor, no limpieza.
+
+## Mantenimiento periódico
+
+- [ ] **Rotar secretos de alto impacto cada 90 días (próxima: 2027-02-03).** Alcance en este repo: Supabase, refresh tokens OAuth. El resto, una vez al año o tras un incidente. Al terminar, mover la fecha 90 días. Excepción: un secreto expuesto en un sitio público o a terceros (repo, Sentry, email, servicio externo) o invalidado se rota en el momento; una aparición en la transcripción local de una sesión espera al calendario.
