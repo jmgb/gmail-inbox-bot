@@ -235,6 +235,12 @@ propósito). Diseño:
   `sudo gmail-promote apply <approval-id>`. La aprobación queda fuera del control de GitHub;
   vincula imagen, snapshot de configuración y entorno. Un SHA declarado por CI no demuestra
   que una imagen corresponda a ese código. Ver `docs/operations/secure-promotion.md`.
+- **Configuración de Actions**: `VPS_HOST` y `VPS_SSH_HOST_KEY` son variables de repositorio;
+  `VPS_SSH_KEY` es el único secret propio de la solicitud. El `GITHUB_TOKEN` integrado solo
+  publica la imagen en GHCR.
+- **Avisos de CI**: los fallos se consultan en Actions. No se envían ni reenvían por Telegram;
+  la monitorización de Root fuera de CI está pendiente. Las notificaciones Telegram de la app
+  siguen siendo independientes.
 - **Health y rollback**: el promotor comprueba Docker y HTTP; ante fallo intenta volver al perfil
   anterior y guarda `last-failure.json`, con el resultado del health de rollback. Revisarlo ante
   cualquier error. Los logs y el proxy Docker existentes se conservan.

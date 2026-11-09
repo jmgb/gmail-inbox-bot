@@ -15,7 +15,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   quality:
@@ -35,12 +34,16 @@ jobs:
         run: bash scripts/ci-local.sh
 
   build-image:
+    permissions:
+      contents: read
+      packages: write
     name: Build immutable image (GHCR)
     needs: quality
     runs-on: ubuntu-latest
     outputs:
       image_ref: ${{ steps.digest.outputs.image_ref }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v6
@@ -80,10 +83,9 @@ jobs:
       # GHCR no borra nada nunca: llegó a 60 versiones antes de la primera purga
       # (2026-07-17). Cada build sube 3 versiones (la imagen + los artefactos de
       # buildx), así que 12 ≈ 4 builds de margen para rollback. Corre DESPUÉS del
-      # push, por lo que la imagen recién construida es la más reciente y nunca se
-      # toca; `main` apunta a ella y es lo que el VPS pulea por digest. Este repo
-      # despliega en CADA push a main (sin gate VPS_AUTO_DEPLOY_ENABLED), así que
-      # sin esto el registro crece sin techo.
+      # push. La aprobación externa usa un digest exacto; la poda puede retirar
+      # candidatos antiguos aún no aprobados. Una descarga fallida aborta antes
+      # de cambiar producción; no se vuelve a construir automáticamente en el VPS.
       # Poda manual equivalente: presupuestor/scripts/purge-ghcr-versions.sh
       - name: Purga versiones antiguas en GHCR
         uses: actions/delete-package-versions@v5
@@ -93,53 +95,34 @@ jobs:
           package-type: container
           min-versions-to-keep: 12
 
-  deploy:
+  # CI can submit only hash data. Approval and activation happen outside GitHub.
+  request-promotion:
     needs: build-image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ubuntu
-          key: ${{ secrets.VPS_SSH_KEY }}
-          # Espera del lock (hasta 5 min) + pull + healthcheck (~1,5 min) + rollback si falla.
-          command_timeout: 10m
-          script: |
-            set -euo pipefail
-            cd /home/ubuntu/services/gmail-inbox-bot
-            # El SHA exacto de la imagen, no el main del momento: con dos pushes seguidos,
-            # config/ (montado desde aquí) podía ir por delante del código de la imagen.
-            DEPLOY_PREVIOUS_SHA="$(git rev-parse HEAD)"
-            git fetch origin main
-            git merge --ff-only '${{ github.sha }}'
-            # Un run retrasado o relanzado de un commit anterior al checkout (p. ej. tras un
-            # deploy a mano) haría "Already up to date" e instalaría la imagen vieja con la
-            # config/ nueva. Se omite.
-            if [ "$(git rev-parse HEAD)" != '${{ github.sha }}' ]; then
-              echo "Checkout en $(git rev-parse --short HEAD), por delante de ${{ github.sha }}: deploy obsoleto, se omite"
-              exit 0
-            fi
-
-            DEPLOY_PREVIOUS_SHA="$DEPLOY_PREVIOUS_SHA" \
-            DEPLOY_IMAGE_REF='${{ needs.build-image.outputs.image_ref }}' \
-            DEPLOY_ALLOW_FALLBACK='true' \
-            GHCR_USERNAME='${{ secrets.GHCR_USERNAME }}' \
-            GHCR_TOKEN='${{ secrets.GHCR_TOKEN }}' \
-            ./scripts/vps_deploy.sh
-
-  notify-failure:
-    needs: [quality, build-image, deploy]
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      # Si el contenedor nuevo no llega a arrancar, el Telegram del bot nunca se inicializa:
-      # este es el único aviso fuera del email de GitHub.
-      - name: Aviso por Telegram
+      - name: Request administrator promotion
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REQUEST_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_SSH_HOST_KEY: ${{ vars.VPS_SSH_HOST_KEY }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
-          curl -sf --max-time 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=❌ [Gmail Bot] Deploy fallido (${GITHUB_SHA::7}). ${RUN_URL}"
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$VPS_SSH_HOST_KEY" =~ ^ssh-ed25519[[:space:]][A-Za-z0-9+/=]+$ ]]
+          umask 077
+          request_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$request_dir"' EXIT
+          printf '%s\n' "$REQUEST_SSH_KEY" > "$request_dir/key"
+          unset REQUEST_SSH_KEY
+          printf '%s %s\n' "$VPS_HOST" "$VPS_SSH_HOST_KEY" > "$request_dir/known_hosts"
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$request_dir/known_hosts" \
+            -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
+            -o ForwardAgent=no -o ClearAllForwardings=yes \
+            -i "$request_dir/key" -- "deploy-gmail@$VPS_HOST" \
+            "request $GITHUB_SHA $IMAGE_DIGEST"
