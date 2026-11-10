@@ -18,26 +18,16 @@ uso personal o single-user.
 - Clasificación: **neutral-llm-gateway** con adapters oficiales de Groq/OpenAI
 - Fuente de verdad: **Gmail**, no una base de datos externa
 
-## Cuentas Gmail conectadas
+## Cómo encontrar la documentación
 
-OAuth2 configurado (proyecto GCP: `ai-setter-443613`, scopes: `gmail.modify` + `calendar.readonly`,
-app publicada). La Google Calendar API debe estar habilitada en el proyecto para los recordatorios.
-Tokens permanentes (no expiran). Para añadir más cuentas: `uv run python scripts/get_refresh_token.py`.
+Este archivo solo trae lo que aplica a casi cualquier tarea; el detalle vive en su `.md`. Si el tema tiene línea-disparador aquí, sigue su enlace; si no, busca antes de actuar: `grep -ril "<tema>" docs README.md ROADMAP.md TASKS.md`.
 
-| Cuenta | Variable refresh token |
-|---|---|
-| `jesus82c@gmail.com` | `GOOGLE_REFRESH_TOKEN_JESUS82C` |
-| `miguelgutierrezbarquin@gmail.com` | `GOOGLE_REFRESH_TOKEN_MIGUELGUTIERREZBARQUIN` |
+## Cuentas, OAuth y métricas
 
-Cada mailbox YAML en `config/` referencia su token vía `refresh_token_env: GOOGLE_REFRESH_TOKEN_XXXXX`.
+Al añadir una cuenta Gmail, tocar tokens/scopes OAuth o la tabla `email_metrics`: cuentas `jesus82c@gmail.com` y `miguelgutierrezbarquin@gmail.com`, cada mailbox YAML de `config/` referencia su token con `refresh_token_env`; OAuth con **localhost redirect** (el flujo OOB está deprecado); aplicar las columnas `jev_*` de `scripts/supabase_create_table.sql` **antes** de desplegar código que las escriba. Detalle: [README.md §Referencia movida desde CLAUDE.md](README.md#referencia-movida-desde-claudemd).
+
 Un YAML roto, sin `email` o con una acción desconocida en `pre_filters`/`routing` **para el
 arranque** (`load_mailbox_configs` + `bot.validate_mailbox_config`): antes se saltaba en silencio.
-
-## OAuth2 — método de autorización
-
-Google deprecó el flujo OOB (`urn:ietf:wg:oauth:2.0:oob`). Usar **localhost redirect**:
-- `redirect_uri`: `http://localhost`
-- El navegador redirige a `http://localhost/?code=XXXX` (no carga, copiar `code=` de la URL)
 
 ## Reglas de diseño
 
@@ -65,208 +55,17 @@ Gmail usa labels. No modelar Outlook folders como si fueran equivalentes exactos
 ### Single-user primero
 
 No introducir complejidad multi-tenant o colas externas salvo requisito claro.
+### Premisa de inbox y routing
 
-### Premisa de inbox: relevante visible, ruido fuera
+Antes de tocar categorías, destinos, tags (`REVISAR IA`, `ERROR IA`, `PENDIENTE GESTIONAR`), idempotencia o el footer de emails: los emails que requieren acción o son muy relevantes se quedan **sin leer en el inbox** con etiqueta del bot; todo lo demás sale del inbox. Los `PROCESSED_TAGS` evitan bucles: el bot no los reprocesa. Los emails de `calendar_reminders` **NO** llevan el footer de aiship.co (deben parecer escritos a mano; no re-añadirlo). Tabla de destinos, flujos y firma: [`docs/CLASSIFICATION_RULES.md`](docs/CLASSIFICATION_RULES.md).
 
-**Principio**: los emails que requieren acción del usuario o son muy relevantes se quedan **sin leer
-en el inbox** con una etiqueta del bot. Todo lo demás se mueve a su carpeta correspondiente fuera
-del inbox.
+### Clasificación (Jev + LLM de reserva)
 
-| Categoría | Destino | En INBOX | Unread | Motivo |
-|---|---|---|---|---|
-| `personal` | tag `REVISAR IA` | **Sí** | **Sí** | Requiere acción/respuesta del usuario |
-| `finanzas` | tag `REVISAR IA` | **Sí** | **Sí** | Verificación o acción financiera |
-| `otros` | tag `REVISAR IA` | **Sí** | **Sí** | Fallback seguro — revisión manual |
-| `compras` | carpeta `Compras` | No | No | Informativo, no requiere acción |
-| `facturas` | carpeta `Facturas` | No | No | Factura/recibo de un cobro ya hecho: comprobante para archivar |
-| `notificaciones` | carpeta `Notificaciones` | No | No | Alertas de apps, no urgente |
-| `automatico` | carpeta `Automatico` | No | No | Out-of-office, noreply, sin acción |
-| `spam` | papelera | No | — | Basura |
-| `newsletters` | carpeta `Newsletters` | No | **Sí** | No requiere acción inmediata pero se conserva sin leer para lectura eventual |
-| error clasificador | tag `ERROR IA` | **Sí** | **Sí** | Fallo técnico pre-clasificación — revisar manualmente |
-| error config/acción | tag `PENDIENTE GESTIONAR` | **Sí** | **Sí** | Fallo post-clasificación (sin template, sin routing, acción desconocida) |
-
-**Facturas**: facturas y recibos de cobros ya hechos o domiciliados (Anthropic, Cloudflare, GCP,
-DIGI, la factura de un pedido…). Salen del inbox porque no piden nada. Las que sí piden acción (por
-vencer, cobro fallido, factura que falta, proveedor que envía facturas para pagar a mano) siguen en
-`finanzas` con `REVISAR IA`. Se marcan **leídas** (decisión del usuario, 2026-09-30): son un
-comprobante, no algo pendiente. La etiqueta la crea el bot la primera vez que mueve un email. La
-etiqueta no sustituye al cron mensual `scripts/download_invoice_emails.py`, que busca por palabras
-clave a propósito para no depender de que el clasificador acierte.
-
-**Newsletters**: se mueven fuera del inbox pero se mantienen sin leer (`is_read: false`). No son
-urgentes ni requieren acción, pero el usuario quiere poder revisarlas a su ritmo. El estado unread
-sirve como indicador de "pendiente de leer" dentro de la carpeta Newsletters.
-
-**Errores del clasificador** (`ERROR IA`): cuando falla la clasificación (sin OpenAI client, sin
-prompt, o error de la API), el email se etiqueta `ERROR IA` y se deja **sin leer en el inbox**.
-
-**Errores de configuración/acción** (`PENDIENTE GESTIONAR`): cuando la clasificación funciona pero
-falla la acción (sin template, sin routing, acción desconocida), se etiqueta `PENDIENTE GESTIONAR`
-y se deja **sin leer en el inbox**.
-
-Ambos tags están en `PROCESSED_TAGS`, así que el bot no los reprocesa. El usuario los ve y decide
-qué hacer.
-
-### Idempotencia y prevención de bucles
-
-El bot tiene tres mecanismos de idempotencia:
-
-1. **La query del poll excluye los `PROCESSED_TAGS`**: `build_poll_query()` (`mail_processing.py`)
-   añade un `-label:"…"` por tag a la `query` del buzón, así que Gmail no devuelve los emails ya
-   procesados y el bot no descarga su cuerpo. Se deriva de `PROCESSED_TAGS`, no de una lista copiada.
-2. **Acciones que quitan INBOX**: `move_email` remueve el label `INBOX`, así el query
-   `is:unread in:inbox` no lo encuentra en el siguiente poll.
-3. **`already_processed()`**: verifica si el email tiene algún tag de `PROCESSED_TAGS`
-   (ej. `RESPONDIDO IA`, `REVISAR IA`, `ERROR IA`). Si lo tiene, lo salta. Se mantiene aunque el
-   mecanismo 1 lo cubra: es la red de seguridad si se renombra un label o alguien sobreescribe la
-   `query` del YAML sin las exclusiones.
-
-**Flujo para categorías que se quedan en inbox** (`personal`, `finanzas`, `otros`):
-
-1. Email llega → labels: `INBOX`, `UNREAD`
-2. `_handle_tag` → añade label `REVISAR IA`, marca leído
-3. Override `is_read: false` → vuelve a poner `UNREAD`
-4. Estado final → labels: `INBOX`, `UNREAD`, `REVISAR IA`
-5. Siguiente poll → la query lleva `-label:"REVISAR IA"`, así que Gmail **ya no lo devuelve** y no
-   se descarga su cuerpo. Si llegara (label renombrado, query sobreescrita), `already_processed()`
-   detecta `REVISAR IA` ∈ `PROCESSED_TAGS` → **skip** → sin bucle
-
-El email queda **sin leer en el inbox** para que el usuario lo vea, pero el bot no lo reprocesa.
-
-**Para categorías que salen del inbox** (ej. `compras`, `notificaciones`): el email queda leído y
-fuera del inbox — doblemente protegido.
-
-### Firma / footer de emails
-
-Todos los emails salientes (reply, dynamic_reply, reply_with_attachment, forward) incluyen un footer
-HTML de marketing desde `templates/signature.html`. El footer es un **caption promocional de aiship.co**
-que busca generar efecto llamada: el destinatario debe percibir que un asistente personal IA redactó
-el email con precisión. **No desalentar respuestas** — el footer es branding, no disclaimer.
-
-- Idioma del footer: **siempre en inglés**.
-- Se puede personalizar por mailbox con `signature_file: ruta/al/archivo.html` en el YAML.
-- Se puede desactivar con `signature_file: ""`.
-- Default: `templates/signature.html`.
-
-**Excepción — recordatorios de Calendar**: los emails de `calendar_reminders` **NO** llevan este
-footer. Deben parecer escritos a mano por el usuario (prosa natural, firma personal `sender_name`,
-sin mención a IA ni a aiship.co). No re-añadir el footer a esos emails. Ver `calendar_reminders.py`.
-
-### Clasificación — mejora continua
-
-**Jev es el clasificador principal** (ver más abajo), así que las reglas viven en dos sitios, por
-este orden:
-
-1. **`gmail_inbox_bot/prompts/clasificador_jev.yml`** — lo que decide. Una entrada por categoría con
-   `what` / `not_for` / `examples`. Aquí se escribe primero cada regla nueva.
-2. **`gmail_inbox_bot/prompts/clasificador_inbox.txt`** — prompt del LLM, que solo clasifica si Jev
-   falla. Tiene **reglas generales** (definiciones de categoría) y **reglas aprendidas de
-   producción**. Se mantiene alineado con el YAML para que el fallback no clasifique distinto.
-
-**Añadir una categoría** toca: el YAML de Jev, `routing` de **todos** los `config/*.yml` y un
-`### <categoria>` en el prompt LLM. Dos tests de `tests/test_jev_classifier.py` fallan si alguno de
-los tres se queda sin actualizar.
-
-**Workflow para mejorar la clasificación:**
-1. Revisar logs del VPS: `docker logs gmail-inbox-bot --tail 100` o `cat logs/app.log`, o el
-   dashboard (`/admin/dashboard`)
-2. Identificar clasificaciones incorrectas (ej. banco → `otros` en vez de `finanzas`)
-3. Añadir la regla en `clasificador_jev.yml` (`not_for` / `examples` de las categorías implicadas)
-   y su equivalente en "Reglas aprendidas de producción" del prompt LLM
-4. Construir y solicitar promoción (push a main); aprobar y activar la imagen fuera de GitHub.
-
-**Principios:**
-- Las reglas deben ser concretas (dominios, patrones de asunto, tipos de remitente)
-- Nunca borrar reglas que funcionan — solo añadir o refinar
-- Preferir reglas por remitente/dominio (más fiables) sobre reglas por contenido del body
-- Documentar el caso real que motivó cada regla
-
-**Jev (TypeSafe.ai) es el clasificador principal desde el 2026-09-27** —
-`gmail_inbox_bot/jev_classifier.py`. Si `JEV_API_KEY` está en el `.env`, **Jev decide la categoría** y
-el routing actúa sobre ella; la cadena LLM (`gpt-oss-120b` → `gpt-6-luna`) queda como **fallback y
-solo entra si Jev devuelve error**. Del 21 al 27 de septiembre corrió en sombra sin decidir nada.
-
-- **Modelo `jev-latest`, explícito** (decisión del usuario, 2026-09-30): las nuevas versiones
-  estables se adoptan automáticamente. No fijar una versión concreta ni heredar el modelo del
-  entorno; las métricas conservan la versión real que respondió.
-- **Aviso de versión**: `jev_model_monitor.py` observa `response.model` en segundo plano y
-  notifica una vez por cambio. El estado en `logs/jev_model_version.txt` sobrevive al despliegue;
-  la primera versión solo establece la referencia. Un bloqueo de archivo evita duplicados entre
-  procesos. El aviso usa el transporte Telegram existente (con reintentos); un fallo del monitor
-  se registra como warning y nunca cambia la clasificación.
-- **Camino de vuelta sin tocar código**: vaciar `JEV_API_KEY` y reiniciar. `build_jev_classifier()`
-  devuelve `None` y clasifica el LLM como antes.
-- **La confianza filtra desde el 2026-10-03** (`CONFIDENCE_FLOORS` en `jev_classifier.py`): `spam`
-  exige `>=0.95` y `newsletters` `>=0.70`; por debajo la categoría efectiva pasa a
-  `spam_sin_confirmar` / `newsletters_sin_confirmar`. El resto no lleva umbral porque su destino ya
-  es el inbox. El criterio es el coste del error en ese destino, no la pericia de Jev. **Nada cae al
-  LLM por confianza baja**: la sombra medía desacuerdo, no quién acierta.
-  ⚠️ Esas dos categorías **necesitan entrada en el `routing` de cada buzón**; sin ella caen en
-  `PENDIENTE GESTIONAR` (inbox, sin leer) — nunca borra, pero no es el destino diseñado.
-- **`razon_clasificacion`** la sintetiza `classification_from_jev()` a partir de la confianza y la
-  segunda opción: Jev no devuelve prosa. Las filas decididas por Jev llevan `model=jev-<versión>`,
-  y **no** llevan `usage` ni `cost` (Jev no factura por tokens).
-- **La comparativa Jev vs LLM ya no crece**: si Jev decide, no hay clasificación LLM con la que
-  comparar. El dashboard excluye esas filas del cálculo (`_decided_by_jev`) para no reportar un
-  100 % falso, y las cuenta aparte en "Decididos por Jev".
-
-Los criterios de Jev viven en `gmail_inbox_bot/prompts/clasificador_jev.yml` (una entrada por
-categoría con `what` / `not_for` / `examples`, mismas claves que `routing`; un test comprueba la
-paridad). Ambos clasificadores usan el mismo formato
-(`email_format.format_email_for_classifier`), pero Jev limita el cuerpo a 6000 caracteres. **Cada
-regla nueva se escribe ahora en el YAML de Jev**, que es quien decide; el prompt LLM solo gobierna
-el fallback. Si el YAML falta o es inválido el bot falla al arrancar (error de despliegue, a
-propósito). Diseño:
-`docs/superpowers/specs/2026-09-21-jev-shadow-classification-design.md`.
+Al cambiar reglas de clasificación o categorías: **Jev (`clasificador_jev.yml`) decide**; el prompt LLM (`clasificador_inbox.txt`) solo es fallback y debe quedar alineado. Cada regla nueva se escribe primero en el YAML de Jev. Añadir una categoría toca el YAML de Jev, `routing` de **todos** los `config/*.yml` y un `### <categoria>` en el prompt LLM (dos tests fallan si falta). Nunca borrar reglas que funcionan; modelo `jev-latest` explícito, no fijar versión; `spam` y `newsletters` tienen umbral de confianza y necesitan entrada `*_sin_confirmar` en el `routing`. Camino de vuelta: vaciar `JEV_API_KEY`. Detalle: [`docs/CLASSIFICATION_RULES.md`](docs/CLASSIFICATION_RULES.md#clasificación--mejora-continua).
 
 ## Despliegue
 
-- **VPS**: `158.69.215.223`. Administración: `prod-admin`; CI: `deploy-gmail`, solo solicitudes.
-- **Promotor instalado**: `/usr/local/sbin/gmail-promote`, código root-owned fuera del checkout.
-  Configuración, decisiones y secretos de ejecución en `/opt/gmail-promotion`.
-- **Tras integrar el workflow nuevo**, cada push construye una imagen en GHCR y envía únicamente
-  `request <sha completo> <sha256:digest>` al servidor. La respuesta `awaiting_admin_approval`
-  significa que la imagen está pendiente; no reinicia ni despliega el bot. CI no recibe sudo,
-  Docker ni credenciales de ejecución. `VPS_SSH_KEY` se reemplaza por una clave de solicitudes;
-  `VPS_SSH_HOST_KEY` contiene la clave pública SSH del host, obtenida por administración confiable.
-- **Promoción manual**, después de revisar/verificar independientemente el artefacto y su
-  configuración: `sudo gmail-promote approve <source-sha> <image-digest> <config-digest>` y
-  `sudo gmail-promote apply <approval-id>`. La aprobación queda fuera del control de GitHub;
-  vincula imagen, snapshot de configuración y entorno. Un SHA declarado por CI no demuestra
-  que una imagen corresponda a ese código. Ver `docs/operations/secure-promotion.md`.
-- **Configuración de Actions**: `VPS_HOST` y `VPS_SSH_HOST_KEY` son variables de repositorio;
-  `VPS_SSH_KEY` es el único secret propio de la solicitud. El `GITHUB_TOKEN` integrado solo
-  publica la imagen en GHCR.
-- **Avisos de CI**: los fallos se consultan en Actions. No se envían ni reenvían por Telegram;
-  la monitorización de Root fuera de CI está pendiente. Las notificaciones Telegram de la app
-  siguen siendo independientes.
-- **Health y rollback**: el promotor comprueba Docker y HTTP; ante fallo intenta volver al perfil
-  anterior y guarda `last-failure.json`, con el resultado del health de rollback. Revisarlo ante
-  cualquier error. Los logs y el proxy Docker existentes se conservan.
-- **Credenciales**: la ejecución promovida usa `runtime-env.json` root-only, capturado del entorno
-  efectivo y respaldado cifrado. Cambiar el `.env` del checkout no actualiza ese snapshot. Las
-  rotaciones requieren actualizar sus consumidores, backup cifrado y reaprobación del entorno.
-- **Estado transitorio**: `scripts/vps_deploy.sh` es una ruta heredada. Las identidades antiguas
-  que conservan sudo/Docker todavía pueden saltarse la promoción; su migración sigue en G02.
-  La nueva identidad de CI no tiene esos permisos. El checkout de
-  `/home/ubuntu/services/gmail-inbox-bot` conserva fuentes/histórico y el directorio de logs.
-- **Puerto**: `8007` (mapeado a `8000` interno)
-- **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
-- **Log Viewer**: https://email.pymechat.com/admin/logs
-- **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto, o si el bot lleva tres ciclos de poll sin leer bien todos los buzones (`stalled`, avisa una vez por Telegram); el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
-- **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
-- **Docker socket**: el contenedor no monta `/var/run/docker.sock`; el visor habla con el sidecar `docker-socket-proxy` por TCP (`DOCKER_API_TCP`), restringido por `-allowfrom` y `-allowGET` a los logs de este único contenedor. Sin la variable, el código vuelve al socket unix
-
-## Métricas (Supabase)
-
-- **Tabla**: `email_metrics` (mismo proyecto Supabase que pacto-mundial-bot)
-- **Escritura**: fire-and-forget en cada email procesado (`metrics.py`)
-- **Lectura**: dashboard vía `/admin/api/metrics`
-- **SQL migrations**: `scripts/supabase_create_table.sql`
-- **SQL runner**: `uv run python scripts/supabase_sql.py "SELECT ..."`
-- **Columnas `jev_*`**: clasificación de Jev; migración en `scripts/supabase_create_table.sql`. Desde el corte a principal, en las filas que decide Jev `category == jev_category` y `model=jev-<versión>`
-  (aplicar antes de desplegar código que las escriba, o el upsert devuelve 400 y se pierde la fila).
+Al desplegar o tocar CI/VPS: cada push construye imagen en GHCR y solo **solicita** promoción; la aprobación y activación son manuales fuera de GitHub (`sudo gmail-promote approve …` / `apply …`). CI no tiene sudo, Docker ni secretos de ejecución. Cambiar el `.env` del checkout no actualiza el snapshot `runtime-env.json`. `scripts/vps_deploy.sh` es ruta heredada. Puerto `8007`; health en https://email.pymechat.com/health. Detalle (VPS, URLs, rollback, credenciales): [`docs/operations/secure-promotion.md`](docs/operations/secure-promotion.md#despliegue-notas-operativas-vps-urls-promotor).
 
 ## Comandos
 
@@ -294,6 +93,8 @@ No hacer push si alguno falla.
 - `docs/PACTO_BUSINESS_RULES_REFERENCE.md`
 - `ROADMAP.md`
 - Skill `/gmail` — referencia completa de la Gmail API y setup OAuth2
+- [`docs/CLASSIFICATION_RULES.md`](docs/CLASSIFICATION_RULES.md)
+- [`docs/operations/secure-promotion.md`](docs/operations/secure-promotion.md)
 
 ## 🔍 Cross-review con Codex (segundo par de ojos)
 

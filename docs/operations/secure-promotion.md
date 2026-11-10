@@ -94,3 +94,43 @@ hosts ni que no se compartieran con otros repositorios. Mantener abierto el inve
 
 La adopción de este workflow cambia el significado de un push: se construye y solicita, y el
 despliegue queda pendiente de aprobación. Los cron/jobs de negocio del bot siguen funcionando.
+
+## Despliegue: notas operativas (VPS, URLs, promotor)
+
+> Movido desde `CLAUDE.md` el 2026-11-10 (allí queda un resumen con enlace aquí).
+
+- **VPS**: `158.69.215.223`. Administración: `prod-admin`; CI: `deploy-gmail`, solo solicitudes.
+- **Promotor instalado**: `/usr/local/sbin/gmail-promote`, código root-owned fuera del checkout.
+  Configuración, decisiones y secretos de ejecución en `/opt/gmail-promotion`.
+- **Tras integrar el workflow nuevo**, cada push construye una imagen en GHCR y envía únicamente
+  `request <sha completo> <sha256:digest>` al servidor. La respuesta `awaiting_admin_approval`
+  significa que la imagen está pendiente; no reinicia ni despliega el bot. CI no recibe sudo,
+  Docker ni credenciales de ejecución. `VPS_SSH_KEY` se reemplaza por una clave de solicitudes;
+  `VPS_SSH_HOST_KEY` contiene la clave pública SSH del host, obtenida por administración confiable.
+- **Promoción manual**, después de revisar/verificar independientemente el artefacto y su
+  configuración: `sudo gmail-promote approve <source-sha> <image-digest> <config-digest>` y
+  `sudo gmail-promote apply <approval-id>`. La aprobación queda fuera del control de GitHub;
+  vincula imagen, snapshot de configuración y entorno. Un SHA declarado por CI no demuestra
+  que una imagen corresponda a ese código. Ver `docs/operations/secure-promotion.md`.
+- **Configuración de Actions**: `VPS_HOST` y `VPS_SSH_HOST_KEY` son variables de repositorio;
+  `VPS_SSH_KEY` es el único secret propio de la solicitud. El `GITHUB_TOKEN` integrado solo
+  publica la imagen en GHCR.
+- **Avisos de CI**: los fallos se consultan en Actions. No se envían ni reenvían por Telegram;
+  la monitorización de Root fuera de CI está pendiente. Las notificaciones Telegram de la app
+  siguen siendo independientes.
+- **Health y rollback**: el promotor comprueba Docker y HTTP; ante fallo intenta volver al perfil
+  anterior y guarda `last-failure.json`, con el resultado del health de rollback. Revisarlo ante
+  cualquier error. Los logs y el proxy Docker existentes se conservan.
+- **Credenciales**: la ejecución promovida usa `runtime-env.json` root-only, capturado del entorno
+  efectivo y respaldado cifrado. Cambiar el `.env` del checkout no actualiza ese snapshot. Las
+  rotaciones requieren actualizar sus consumidores, backup cifrado y reaprobación del entorno.
+- **Estado transitorio**: `scripts/vps_deploy.sh` es una ruta heredada. Las identidades antiguas
+  que conservan sudo/Docker todavía pueden saltarse la promoción; su migración sigue en G02.
+  La nueva identidad de CI no tiene esos permisos. El checkout de
+  `/home/ubuntu/services/gmail-inbox-bot` conserva fuentes/histórico y el directorio de logs.
+- **Puerto**: `8007` (mapeado a `8000` interno)
+- **Admin Dashboard**: https://email.pymechat.com/admin/dashboard
+- **Log Viewer**: https://email.pymechat.com/admin/logs
+- **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto, o si el bot lleva tres ciclos de poll sin leer bien todos los buzones (`stalled`, avisa una vez por Telegram); el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
+- **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
+- **Docker socket**: el contenedor no monta `/var/run/docker.sock`; el visor habla con el sidecar `docker-socket-proxy` por TCP (`DOCKER_API_TCP`), restringido por `-allowfrom` y `-allowGET` a los logs de este único contenedor. Sin la variable, el código vuelve al socket unix

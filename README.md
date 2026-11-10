@@ -640,3 +640,38 @@ a push of a commit other than the checked-out HEAD, failed checks, and edits
 made during validation. Deleting a ref does not run checks.
 The script selects Python 3.13 and the locked development dependencies,
 then runs Ruff lint, the format check and pytest.
+
+## Referencia movida desde CLAUDE.md
+
+> Movido desde `CLAUDE.md` el 2026-11-10 (allí queda un resumen con enlace aquí).
+
+### Cuentas Gmail conectadas
+
+OAuth2 configurado (proyecto GCP: `ai-setter-443613`, scopes: `gmail.modify` + `calendar.readonly`,
+app publicada). La Google Calendar API debe estar habilitada en el proyecto para los recordatorios.
+Tokens permanentes (no expiran). Para añadir más cuentas: `uv run python scripts/get_refresh_token.py`.
+
+| Cuenta | Variable refresh token |
+|---|---|
+| `jesus82c@gmail.com` | `GOOGLE_REFRESH_TOKEN_JESUS82C` |
+| `miguelgutierrezbarquin@gmail.com` | `GOOGLE_REFRESH_TOKEN_MIGUELGUTIERREZBARQUIN` |
+
+Cada mailbox YAML en `config/` referencia su token vía `refresh_token_env: GOOGLE_REFRESH_TOKEN_XXXXX`.
+Un YAML roto, sin `email` o con una acción desconocida en `pre_filters`/`routing` **para el
+arranque** (`load_mailbox_configs` + `bot.validate_mailbox_config`): antes se saltaba en silencio.
+
+### OAuth2 — método de autorización
+
+Google deprecó el flujo OOB (`urn:ietf:wg:oauth:2.0:oob`). Usar **localhost redirect**:
+- `redirect_uri`: `http://localhost`
+- El navegador redirige a `http://localhost/?code=XXXX` (no carga, copiar `code=` de la URL)
+
+### Métricas (Supabase)
+
+- **Tabla**: `email_metrics` (mismo proyecto Supabase que pacto-mundial-bot)
+- **Escritura**: fire-and-forget en cada email procesado (`metrics.py`)
+- **Lectura**: dashboard vía `/admin/api/metrics`
+- **SQL migrations**: `scripts/supabase_create_table.sql`
+- **SQL runner**: `uv run python scripts/supabase_sql.py "SELECT ..."`
+- **Columnas `jev_*`**: clasificación de Jev; migración en `scripts/supabase_create_table.sql`. Desde el corte a principal, en las filas que decide Jev `category == jev_category` y `model=jev-<versión>`
+  (aplicar antes de desplegar código que las escriba, o el upsert devuelve 400 y se pierde la fila).
