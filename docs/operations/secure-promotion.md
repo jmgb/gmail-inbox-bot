@@ -60,8 +60,8 @@ real comprobó que el resultado coincide con los valores efectivos, sin mostrarl
 
 Una rotación debe actualizar el snapshot de entorno y sus otros consumidores de forma coordinada,
 crear un backup cifrado nuevo y emitir otra aprobación. Editar el `.env` heredado del checkout
-no actualiza el snapshot activo. Incluir este JSON y `/opt/gmail-promotion/docker/config.json`
-en las copias cifradas de la operación: el inventario diario anterior no los incluye todavía.
+no actualiza el snapshot activo. Este JSON y `/opt/gmail-promotion/docker/config.json` están registrados en el
+inventario canónico `env-backup` de Alfredo desde el traslado del 15/11/2026.
 La primera copia cifrada de ambos archivos se creó y su descifrado se verificó antes de activar.
 
 La credencial de lectura del registro queda en el directorio Docker root-only; no se admiten
@@ -99,7 +99,10 @@ despliegue queda pendiente de aprobación. Los cron/jobs de negocio del bot sigu
 
 > Movido desde `CLAUDE.md` el 2026-11-10 (allí queda un resumen con enlace aquí).
 
-- **VPS**: `158.69.215.223`. Administración: `prod-admin`; CI: `deploy-gmail`, solo solicitudes.
+- **Runtime y promotor**: Alfredo, `158.220.112.17` (`ssh alfredo-admin`, `prod-admin`).
+  Finanzas conserva el receptor CI `deploy-gmail`, que solo registra solicitudes;
+  revisar allí sus hashes y aprobar/aplicar desde Alfredo. El ejecutable
+  `gmail-promote` de Finanzas está retirado para evitar reactivar un segundo bot.
 - **Promotor instalado**: `/usr/local/sbin/gmail-promote`, código root-owned fuera del checkout.
   Configuración, decisiones y secretos de ejecución en `/opt/gmail-promotion`.
 - **Tras integrar el workflow nuevo**, cada push construye una imagen en GHCR y envía únicamente
@@ -134,3 +137,31 @@ despliegue queda pendiente de aprobación. Los cron/jobs de negocio del bot sigu
 - **Health**: https://email.pymechat.com/health — devuelve **503** si el thread del bot o el del scheduler han muerto, o si el bot lleva tres ciclos de poll sin leer bien todos los buzones (`stalled`, avisa una vez por Telegram); el `HEALTHCHECK` del Dockerfile lo consulta y el crash se avisa por Telegram (Docker no reinicia por `unhealthy`)
 - **Password admin**: variable `LOGS_VIEWER_PASSWORD` en `.env`
 - **Docker socket**: el contenedor no monta `/var/run/docker.sock`; el visor habla con el sidecar `docker-socket-proxy` por TCP (`DOCKER_API_TCP`), restringido por `-allowfrom` y `-allowGET` a los logs de este único contenedor. Sin la variable, el código vuelve al socket unix
+
+## Traslado a Alfredo del 15/11/2026
+
+Imagen exacta conservada: `sha256:15caf962c55c92d5d4635dd6a546828052dc85c2ffcb1f4c15c040b4a59c4460`,
+fuente `d16dbaa4756dd731c8ed700955f44b00b8b2d367`. Se copiaron el promotor
+Root, sus snapshots y la configuración aprobada sin ejecutar scripts del checkout.
+La nueva aprobación `0e528d97ce47f0b2cce4f8c2cbd104c8c2abce925ff5b402bab9f9c1efea81ff`
+solo cambia `TELEGRAM_ACTIVITY_HOST=alfredo`; las claves y reglas de buzón se conservan.
+
+Se detuvo el origen en un intervalo de reposo y se verificaron por SHA-256 todos
+los archivos de `logs/`, incluido `calendar_reminders_state.json`, antes de arrancar
+el destino. Una reversión debe parar primero Alfredo y devolver su estado actualizado
+a Finanzas; no restaurar una copia antigua de recordatorios con el bot activo.
+
+Bot y scheduler vivos, Docker healthy y health público 200; el proxy interno
+permite inspeccionar Gmail (200) y deniega listar contenedores (403). Puerto 8007
+en loopback, socket solo en el proxy, GID del socket comprobado: 988. DNS A de
+`email.pymechat.com` apunta a Alfredo; Finanzas conserva un relay HTTPS con
+verificación de certificado y profundidad 4 para las cachés DNS antiguas.
+
+La renovación ACME de este dominio se realiza en Alfredo (`certbot.timer` activo);
+la renovación duplicada de Finanzas está retirada. Contenedores y dos imágenes
+actuales sin consumidores retirados del origen tras custodiar recuperación cifrada
+y verificar su descifrado. Los datos/snapshots antiguos conservados en Finanzas
+son de recuperación, no un segundo runtime. Autofix y su ejecutor se encaminan
+a Alfredo; el receptor CI de hashes sigue en Finanzas y no activa contenedores.
+
+Acta completa: `pymechat-alfredo/docs/operations/2026-11-15-finanzas-to-alfredo.md`.
